@@ -1,0 +1,13 @@
+[package]
+name = "ubiquitous-dollop"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.75"
+pixels = "0.13.0"
+winit = "0.28.6"
+
+[dependencies.tokio]
+version = "1.32.0"
+features = ["full"]
