@@ -12,7 +12,7 @@ use winit::{
 fn main() -> anyhow::Result<()> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop)?;
-    let mut render = Render::new(&window)?;
+    // let mut render = Render::new(&window)?;
 
     let mut rgb = [0u8; 3];
     thread::spawn(move || loop {
@@ -34,9 +34,9 @@ fn main() -> anyhow::Result<()> {
                 event: WindowEvent::Resized(size),
                 ..
             } => {
-                if render.resize(size.width, size.height).is_err() {
-                    *control_flow = ControlFlow::Exit;
-                }
+                // if render.resize(size.width, size.height).is_err() {
+                //     *control_flow = ControlFlow::Exit;
+                // }
             }
             Event::RedrawRequested(_) => {
                 for item in &mut rgb {
@@ -47,9 +47,9 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
 
-                if render.redraw(rgb[0], rgb[1], rgb[2]).is_err() {
-                    *control_flow = ControlFlow::Exit;
-                }
+                // if render.redraw().is_err() {
+                //     *control_flow = ControlFlow::Exit;
+                // }
             }
             _ => (),
         }

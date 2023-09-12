@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.75"
-pixels = "0.13.0"
+wgpu = "0.17.0"
 winit = "0.28.6"
 
 [dependencies.tokio]
