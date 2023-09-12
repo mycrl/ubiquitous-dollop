@@ -1,12 +1,12 @@
 use std::sync::Mutex;
 
 use anyhow::{anyhow, Result};
-use winit::window::Window;
 use wgpu::{
     CompositeAlphaMode, Device, Extent3d, Instance, PresentMode, Queue, Surface,
     SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension, TextureFormat,
     TextureUsages,
 };
+use winit::window::Window;
 
 pub struct Render {
     surface: Surface,
@@ -44,7 +44,7 @@ impl Render {
             width: size.width,
             height: size.height,
             present_mode: PresentMode::Fifo,
-            alpha_mode: CompositeAlphaMode::Opaque, 
+            alpha_mode: CompositeAlphaMode::Opaque,
             view_formats: vec![TextureFormat::Rgba8Snorm],
         };
 
@@ -57,8 +57,11 @@ impl Render {
         })
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {
-        Ok(())
+    pub fn resize(&self, width: u32, height: u32) {
+        let mut config = self.config.lock().unwrap();
+        config.width = width;
+        config.height = height;
+        self.surface.configure(&self.device, &config);
     }
 
     pub fn redraw(&mut self) -> Result<()> {

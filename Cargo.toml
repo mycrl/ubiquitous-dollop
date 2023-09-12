@@ -3,6 +3,12 @@ name = "ubiquitous-dollop"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+resolver = "2"
+members = [
+    "webview"
+]
+
 [dependencies]
 anyhow = "1.0.75"
 wgpu = "0.17.0"

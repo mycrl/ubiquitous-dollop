@@ -1,8 +1,9 @@
 mod render;
 
-use std::{thread, time::Duration};
+use std::{sync::Arc, thread, time::Duration};
 
 use render::Render;
+use tokio::runtime::Runtime;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -10,9 +11,10 @@ use winit::{
 };
 
 fn main() -> anyhow::Result<()> {
+    let runtime = Runtime::new()?;
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop)?;
-    // let mut render = Render::new(&window)?;
+    let render = Arc::new(runtime.block_on(async { Render::new(&window).await })?);
 
     let mut rgb = [0u8; 3];
     thread::spawn(move || loop {
@@ -34,9 +36,7 @@ fn main() -> anyhow::Result<()> {
                 event: WindowEvent::Resized(size),
                 ..
             } => {
-                // if render.resize(size.width, size.height).is_err() {
-                //     *control_flow = ControlFlow::Exit;
-                // }
+                render.resize(size.width, size.height);
             }
             Event::RedrawRequested(_) => {
                 for item in &mut rgb {
