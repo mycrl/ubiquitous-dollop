@@ -1,24 +1,33 @@
-mod bridge;
+pub mod bridge;
+pub mod control;
 
 use std::{
     ffi::{c_char, c_float, c_int, c_void},
+    ptr::null,
     slice::from_raw_parts,
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 
 use anyhow::{anyhow, Result};
 use serde::{de::DeserializeOwned, Serialize};
-use tokio::sync::{
-    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    oneshot,
+use tokio::{
+    runtime::Handle,
+    sync::{
+        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        oneshot,
+    },
 };
 
 use crate::{
     app::RawApp,
     ptr::{from_c_str, AsCStr},
+    ActionState, ImeAction, Modifiers, MouseAction, TouchEventType, TouchPointerType,
 };
 
-use self::bridge::Bridge;
+use self::{
+    bridge::{Bridge, BridgeObserver, BridgeOnContext, BridgeOnHandler},
+    control::{Control, Rect},
+};
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -31,21 +40,12 @@ pub enum BrowserState {
 }
 
 #[repr(C)]
-pub struct Rect {
-    pub x: c_int,
-    pub y: c_int,
-    pub width: c_int,
-    pub height: c_int,
-}
-
-#[repr(C)]
-struct RawResult {
+struct Ret {
     success: *const c_char,
     failure: *const c_char,
-    destroy: extern "C" fn(str: *const c_char),
 }
 
-type BridgeOnCallback = extern "C" fn(callback_ctx: *mut c_void, ret: RawResult);
+type BridgeOnCallback = extern "C" fn(callback_ctx: *mut c_void, ret: Ret);
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -58,7 +58,7 @@ struct RawBrowserObserver {
     on_bridge: extern "C" fn(
         req: *const c_char,
         ctx: *mut c_void,
-        callback_ctx: *const c_void,
+        callback_ctx: *mut c_void,
         callback: BridgeOnCallback,
     ),
 }
@@ -75,7 +75,7 @@ struct RawBrowserSettings {
 }
 
 #[repr(C)]
-struct RawBrowser {
+pub(crate) struct RawBrowser {
     r#ref: *const c_void,
 }
 
@@ -107,7 +107,7 @@ pub struct BrowserSettings<'a> {
 impl Into<RawBrowserSettings> for BrowserSettings<'_> {
     fn into(self) -> RawBrowserSettings {
         RawBrowserSettings {
-            url: self.url.as_c_str().0,
+            url: self.url.as_c_str().ptr,
             window_handle: self.window_handle.0,
             frame_rate: self.frame_rate,
             width: self.width,
@@ -135,6 +135,7 @@ enum ObserverMsg {
 struct Delegation {
     observer: Arc<dyn Observer>,
     tx: Arc<UnboundedSender<ObserverMsg>>,
+    on_bridge_callback: Arc<RwLock<Option<BridgeOnContext>>>,
 }
 
 impl Delegation {
@@ -145,6 +146,7 @@ impl Delegation {
         let (tx, rx) = unbounded_channel();
         (
             Self {
+                on_bridge_callback: Arc::new(RwLock::new(None)),
                 observer: Arc::new(observer),
                 tx: Arc::new(tx),
             },
@@ -154,6 +156,7 @@ impl Delegation {
 }
 
 pub struct Browser {
+    runtime: Handle,
     #[allow(unused)]
     delegation: Delegation,
     settings: *mut RawBrowserSettings,
@@ -172,6 +175,7 @@ impl Browser {
     where
         T: Observer + 'static,
     {
+        let runtime = Handle::current();
         let (delegation, mut receiver) = Delegation::new(observer);
         let settings = Box::into_raw(Box::new(settings.into()));
         let ptr = unsafe {
@@ -213,6 +217,7 @@ impl Browser {
         Ok(Arc::new(Self {
             delegation,
             settings,
+            runtime,
             ptr,
         }))
     }
@@ -225,11 +230,48 @@ impl Browser {
         Bridge::call(self.ptr, req).await
     }
 
-    pub fn on_bridge<Q, S, H>(&self, handler: H) 
+    pub fn on_bridge<Q, S, H>(&self, observer: H)
     where
-        H: Fn(Q) -> S
+        Q: DeserializeOwned + Send + 'static,
+        S: Serialize + 'static,
+        H: BridgeObserver<Req = Q, Res = S> + 'static,
     {
+        let runtime = self.runtime.clone();
+        let prcesser = Arc::new(BridgeOnHandler::new(observer));
+        let _ = self
+            .delegation
+            .on_bridge_callback
+            .write()
+            .unwrap()
+            .insert(BridgeOnContext(Arc::new(move |req, callback| {
+                let prcesser = prcesser.clone();
+                runtime.spawn(async move {
+                    callback(prcesser.handle(&req).await);
+                });
+            })));
+    }
 
+    pub fn on_mouse(&self, action: MouseAction) {
+        Control::on_mouse(self.ptr, action)
+    }
+
+    pub fn on_keyboard(&self, scan_code: u32, state: ActionState, modifiers: Modifiers) {
+        Control::on_keyboard(self.ptr, scan_code, state, modifiers)
+    }
+
+    pub fn on_touch(
+        &self,
+        id: i32,
+        x: i32,
+        y: i32,
+        ty: TouchEventType,
+        pointer_type: TouchPointerType,
+    ) {
+        Control::on_touch(self.ptr, id, x, y, ty, pointer_type)
+    }
+
+    pub fn on_ime(&self, action: ImeAction) {
+        Control::on_ime(self.ptr, action)
     }
 }
 
@@ -250,20 +292,21 @@ static BROWSER_OBSERVER: RawBrowserObserver = RawBrowserObserver {
 };
 
 extern "C" fn on_state_change(state: BrowserState, ctx: *mut c_void) {
-    let ctx = unsafe { &*(ctx as *mut Delegation) };
-    ctx.tx
+    let delegation = unsafe { &*(ctx as *mut Delegation) };
+    delegation
+        .tx
         .send(ObserverMsg::StateChange(state))
         .expect("channel is closed, message send failed!");
 }
 
 extern "C" fn on_ime_rect(rect: Rect, ctx: *mut c_void) {
-    let ctx = unsafe { &*(ctx as *mut Delegation) };
-    ctx.observer.on_ime_rect(rect);
+    let delegation = unsafe { &*(ctx as *mut Delegation) };
+    delegation.observer.on_ime_rect(rect);
 }
 
 extern "C" fn on_frame(buf: *const c_void, width: c_int, height: c_int, ctx: *mut c_void) {
-    let ctx = unsafe { &*(ctx as *mut Delegation) };
-    ctx.observer.on_frame(
+    let delegation = unsafe { &*(ctx as *mut Delegation) };
+    delegation.observer.on_frame(
         unsafe { from_raw_parts(buf as *const _, width as usize * height as usize * 4) },
         width as u32,
         height as u32,
@@ -272,20 +315,49 @@ extern "C" fn on_frame(buf: *const c_void, width: c_int, height: c_int, ctx: *mu
 
 extern "C" fn on_title_change(title: *const c_char, ctx: *mut c_void) {
     if let Some(title) = from_c_str(title) {
-        let ctx = unsafe { &*(ctx as *mut Delegation) };
-        ctx.observer.on_title_change(title);
+        let delegation = unsafe { &*(ctx as *mut Delegation) };
+        delegation.observer.on_title_change(title);
     }
 }
 
 extern "C" fn on_fullscreen_change(fullscreen: bool, ctx: *mut c_void) {
-    let ctx = unsafe { &*(ctx as *mut Delegation) };
-    ctx.observer.on_fullscreen_change(fullscreen);
+    let delegation = unsafe { &*(ctx as *mut Delegation) };
+    delegation.observer.on_fullscreen_change(fullscreen);
 }
 
 extern "C" fn on_bridge(
     req: *const c_char,
     ctx: *mut c_void,
-    callback_ctx: *const c_void,
+    callback_ctx: *mut c_void,
     callback: BridgeOnCallback,
 ) {
+    let delegation = unsafe { &*(ctx as *mut Delegation) };
+    from_c_str(req).map(|req| {
+        delegation
+            .on_bridge_callback
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|on_ctx| {
+                let ctx = callback_ctx as usize;
+                on_ctx.0.as_ref()(
+                    req,
+                    Box::new(move |ret| {
+                        callback(
+                            ctx as *mut c_void,
+                            match ret {
+                                Ok(res) => Ret {
+                                    success: res.as_c_str().ptr,
+                                    failure: null(),
+                                },
+                                Err(err) => Ret {
+                                    failure: err.as_c_str().ptr,
+                                    success: null(),
+                                },
+                            },
+                        );
+                    }),
+                );
+            });
+    });
 }

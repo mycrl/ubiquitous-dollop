@@ -500,6 +500,5 @@ void bridge_master_handler_callback(void* ctx, Result ret)
     IBridgeMaster::Context* ictx = (IBridgeMaster::Context*)ctx;
     std::string res = ret.success ? std::string(ret.success) : std::string(ret.failure);
     ictx->handler(res, ret.failure != nullptr);
-    ret.destroy(&ret);
     delete ictx;
 }

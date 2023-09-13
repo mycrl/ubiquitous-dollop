@@ -1,5 +1,6 @@
 use std::{
     ffi::{c_char, c_void},
+    sync::Arc,
     time::Duration,
 };
 
@@ -26,15 +27,15 @@ extern "C" {
 }
 
 #[async_trait]
-pub trait BridgeOnExt: Send + Sync {
-    type Req;
-    type Res;
+pub trait BridgeObserver: Send + Sync {
+    type Req: DeserializeOwned + Send;
+    type Res: Serialize + 'static;
 
     async fn on(&self, req: Self::Req) -> Result<Self::Res>;
 }
 
-pub struct BridgeOnHandler<Q, S> {
-    pub(crate) processor: Box<dyn BridgeOnExt<Req = Q, Res = S>>,
+pub(crate) struct BridgeOnHandler<Q, S> {
+    processor: Arc<dyn BridgeObserver<Req = Q, Res = S>>,
 }
 
 impl<Q, S> BridgeOnHandler<Q, S>
@@ -42,9 +43,9 @@ where
     Q: DeserializeOwned + Send,
     S: Serialize + 'static,
 {
-    pub fn new<T: BridgeOnExt<Req = Q, Res = S> + 'static>(processer: T) -> Self {
+    pub(crate) fn new<T: BridgeObserver<Req = Q, Res = S> + 'static>(processer: T) -> Self {
         Self {
-            processor: Box::new(processer),
+            processor: Arc::new(processer),
         }
     }
 
@@ -61,17 +62,15 @@ where
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct BridgeOnContext(
-    pub Box<dyn Fn(String, Box<dyn FnOnce(Result<String, String>) + Send + Sync>)>,
+    pub Arc<dyn Fn(String, Box<dyn FnOnce(Result<String, String>) + Send + Sync>)>,
 );
 
-pub struct Bridge;
+pub(crate) struct Bridge;
 
 impl Bridge {
-    pub async fn call<Q, S>(
-        ptr: *const RawBrowser,
-        req: &Q,
-    ) -> Result<Option<S>>
+    pub(crate) async fn call<Q, S>(ptr: *const RawBrowser, req: &Q) -> Result<Option<S>>
     where
         Q: Serialize,
         S: DeserializeOwned,
@@ -82,7 +81,7 @@ impl Bridge {
         unsafe {
             browser_bridge_call(
                 ptr,
-                req.0,
+                req.ptr,
                 bridge_call_callback,
                 Box::into_raw(Box::new(tx)) as *mut c_void,
             );

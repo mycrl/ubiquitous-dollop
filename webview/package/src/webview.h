@@ -60,7 +60,6 @@ typedef struct
 {
     char* success;
     char* failure;
-    void (*destroy)(void* self);
 } Result;
 
 typedef enum

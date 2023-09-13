@@ -45,9 +45,9 @@ pub struct AppSettings<'a> {
 impl Into<RawAppSettings> for AppSettings<'_> {
     fn into(self) -> RawAppSettings {
         RawAppSettings {
-            cache_path: self.cache_path.as_c_str().0,
-            browser_subprocess_path: self.browser_subprocess_path.as_c_str().0,
-            scheme_path: self.scheme_path.as_c_str().0,
+            cache_path: self.cache_path.as_c_str().ptr,
+            scheme_path: self.scheme_path.as_c_str().ptr,
+            browser_subprocess_path: self.browser_subprocess_path.as_c_str().ptr,
         }
     }
 }
@@ -97,7 +97,10 @@ impl App {
             .collect::<Vec<_>>();
         let ret = Handle::current()
             .spawn_blocking(move || unsafe {
-                let args = args.iter().map(|arg| arg.0).collect::<Vec<*const c_char>>();
+                let args = args
+                    .iter()
+                    .map(|arg| arg.ptr)
+                    .collect::<Vec<*const c_char>>();
                 app_run(self.ptr, args.len() as c_int, args.as_ptr())
             })
             .await?;

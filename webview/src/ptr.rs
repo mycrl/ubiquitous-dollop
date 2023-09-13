@@ -3,7 +3,9 @@ use std::{
     ptr::null,
 };
 
-pub(crate) struct CStrPtr(pub *const c_char);
+pub(crate) struct CStrPtr {
+    pub ptr: *const c_char,
+}
 
 unsafe impl Send for CStrPtr {}
 unsafe impl Sync for CStrPtr {}
@@ -11,14 +13,16 @@ unsafe impl Sync for CStrPtr {}
 impl TryFrom<&str> for CStrPtr {
     type Error = anyhow::Error;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(Self(ffi::CString::new(value)?.into_raw()))
+        Ok(Self {
+            ptr: ffi::CString::new(value)?.into_raw(),
+        })
     }
 }
 
 impl Drop for CStrPtr {
     fn drop(&mut self) {
-        if !self.0.is_null() {
-            drop(unsafe { ffi::CString::from_raw(self.0 as *mut c_char) })
+        if !self.ptr.is_null() {
+            drop(unsafe { ffi::CString::from_raw(self.ptr as *mut c_char) })
         }
     }
 }
@@ -42,19 +46,19 @@ impl<'a> AsCStr for &'a str {
 impl<'a> AsCStr for Option<&'a str> {
     fn as_c_str(&self) -> CStrPtr {
         self.map(|str| CStrPtr::try_from(str).unwrap())
-            .unwrap_or(CStrPtr(null()))
+            .unwrap_or(CStrPtr { ptr: null() })
     }
 }
 
-pub(crate) fn to_c_str(str: &str) -> *const c_char {
-    ffi::CString::new(str).unwrap().into_raw()
-}
+// pub(crate) fn to_c_str(str: &str) -> *const c_char {
+//     ffi::CString::new(str).unwrap().into_raw()
+// }
 
-pub(crate) fn release_c_str(str: *const c_char) {
-    if !str.is_null() {
-        drop(unsafe { ffi::CString::from_raw(str as *mut c_char) })
-    }
-}
+// pub(crate) fn release_c_str(str: *const c_char) {
+//     if !str.is_null() {
+//         drop(unsafe { ffi::CString::from_raw(str as *mut c_char) })
+//     }
+// }
 
 pub(crate) fn from_c_str(str: *const c_char) -> Option<String> {
     if !str.is_null() {

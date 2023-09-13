@@ -20,7 +20,7 @@ IBrowser::IBrowser(std::shared_ptr<MessageRouter> router,
     , _observer(observer)
     , _ctx(ctx)
     , IBridgeMaster(router)
-    , IRender(settings)
+    , IRender(settings, observer, ctx)
     , IDisplay(settings, observer, ctx)
 {
     assert(settings);
@@ -154,12 +154,6 @@ void IBrowser::OnAfterCreated(CefRefPtr<CefBrowser> browser)
 bool IBrowser::DoClose(CefRefPtr<CefBrowser> browser)
 {
     CEF_REQUIRE_UI_THREAD();
-
-    if (_is_closed)
-    {
-        return;
-    }
-
     return false;
 }
 
