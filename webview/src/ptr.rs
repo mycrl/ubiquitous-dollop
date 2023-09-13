@@ -17,8 +17,9 @@ impl TryFrom<&str> for CStrPtr {
 
 impl Drop for CStrPtr {
     fn drop(&mut self) {
-        assert!(!self.0.is_null());
-        drop(unsafe { ffi::CString::from_raw(self.0 as *mut c_char) })
+        if !self.0.is_null() {
+            drop(unsafe { ffi::CString::from_raw(self.0 as *mut c_char) })
+        }
     }
 }
 
