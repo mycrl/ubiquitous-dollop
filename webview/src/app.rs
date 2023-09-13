@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::ptr::AsCStr;
+use crate::{ptr::AsCStr, Browser, BrowserSettings, Observer};
 
 use anyhow::{anyhow, Result};
 use tokio::{
@@ -37,9 +37,9 @@ extern "C" {
 }
 
 pub struct AppSettings<'a> {
-    cache_path: Option<&'a str>,
-    browser_subprocess_path: Option<&'a str>,
-    scheme_path: Option<&'a str>,
+    pub cache_path: Option<&'a str>,
+    pub browser_subprocess_path: Option<&'a str>,
+    pub scheme_path: Option<&'a str>,
 }
 
 impl Into<RawAppSettings> for AppSettings<'_> {
@@ -78,6 +78,17 @@ impl App {
 
         rx.await?;
         Ok(Arc::new(Self { settings, ptr }))
+    }
+
+    pub async fn create_browser<T>(
+        &self,
+        settings: BrowserSettings<'_>,
+        observer: T,
+    ) -> Result<Arc<Browser>>
+    where
+        T: Observer + 'static,
+    {
+        Browser::new(self.ptr, settings, observer).await
     }
 
     pub async fn run(self: Arc<Self>) -> Result<()> {
