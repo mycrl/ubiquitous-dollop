@@ -101,6 +101,19 @@ CefRefPtr<CefRenderHandler> IBrowser::GetRenderHandler()
     return nullptr;
 }
 
+
+void IBrowser::OnLoadStart(CefRefPtr<CefBrowser> browser,
+                           CefRefPtr<CefFrame> frame,
+                           TransitionType transition_type)
+{
+    if (_is_closed)
+    {
+        return;
+    }
+
+    _observer.on_state_change(BrowserState::BeforeLoad, _ctx);
+}
+
 void IBrowser::OnLoadEnd(CefRefPtr<CefBrowser> browser,
                          CefRefPtr<CefFrame> frame,
                          int httpStatusCode)

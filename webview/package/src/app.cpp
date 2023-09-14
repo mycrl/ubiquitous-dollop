@@ -10,6 +10,12 @@
 #include "include/wrapper/cef_helpers.h"
 #include "scheme_handler.h"
 
+IApp::IApp(AppSettings* settings, CreateAppCallback callback, void* ctx)
+    : _settings(settings), _callback(callback), _ctx(ctx)
+{
+    assert(settings);
+}
+
 CefRefPtr<CefBrowserProcessHandler> IApp::GetBrowserProcessHandler()
 {
     return this;

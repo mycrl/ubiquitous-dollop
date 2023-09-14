@@ -50,15 +50,20 @@ impl<'a> AsCStr for Option<&'a str> {
     }
 }
 
-// pub(crate) fn to_c_str(str: &str) -> *const c_char {
-//     ffi::CString::new(str).unwrap().into_raw()
-// }
+pub(crate) fn to_c_str(str: &str) -> *const c_char {
+    ffi::CString::new(str).unwrap().into_raw()
+}
 
-// pub(crate) fn release_c_str(str: *const c_char) {
-//     if !str.is_null() {
-//         drop(unsafe { ffi::CString::from_raw(str as *mut c_char) })
-//     }
-// }
+pub(crate) fn opt_to_c_str(str: Option<&str>) -> *const c_char {
+    str.map(|str| ffi::CString::new(str).unwrap().into_raw() as *const _)
+        .unwrap_or(null())
+}
+
+pub(crate) fn release_c_str(str: *const c_char) {
+    if !str.is_null() {
+        drop(unsafe { ffi::CString::from_raw(str as *mut c_char) })
+    }
+}
 
 pub(crate) fn from_c_str(str: *const c_char) -> Option<String> {
     if !str.is_null() {

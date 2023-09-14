@@ -1,11 +1,12 @@
 mod render;
-mod wenview;
+mod view;
 
 use std::{sync::Arc, thread, time::Duration};
 
 use render::Render;
 use tokio::runtime::Runtime;
-use wenview::Webview;
+use view::{Webview, WebviewInfo};
+use webview::{execute_subprocess, is_subprocess};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -13,17 +14,27 @@ use winit::{
 };
 
 fn main() -> anyhow::Result<()> {
+    if is_subprocess() {
+        execute_subprocess();
+    }
+
     let runtime = Runtime::new()?;
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop)?;
-    let render = Arc::new(runtime.block_on(async { Render::new(&window).await })?);
-    let webview = runtime.block_on(async { Webview::new().await })?;
+    let window = Arc::new(WindowBuilder::new().build(&event_loop)?);
+    let render = runtime.block_on(async { Render::new(&window).await })?;
 
-    let mut rgb = [0u8; 3];
-    thread::spawn(move || loop {
-        thread::sleep(Duration::from_millis(1000 / 60));
-        window.request_redraw();
-    });
+    let size = window.inner_size();
+    let webview = runtime.block_on(async {
+        Webview::new(
+            WebviewInfo {
+                url: "https://google.com",
+                width: size.width,
+                height: size.height,
+            },
+            render.clone(),
+        )
+        .await
+    })?;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -40,19 +51,13 @@ fn main() -> anyhow::Result<()> {
                 ..
             } => {
                 render.resize(size.width, size.height);
+                webview.resize(size.width, size.height);
             }
             Event::RedrawRequested(_) => {
-                for item in &mut rgb {
-                    if item == &255 {
-                        *item = 0;
-                    } else {
-                        *item += 1;
-                    }
-                }
-
-                // if render.redraw().is_err() {
-                //     *control_flow = ControlFlow::Exit;
-                // }
+                render.redraw().unwrap();
+            }
+            Event::MainEventsCleared => {
+                window.request_redraw();
             }
             _ => (),
         }

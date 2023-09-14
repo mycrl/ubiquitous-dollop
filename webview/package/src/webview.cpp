@@ -6,7 +6,6 @@
 //
 
 #include "webview.h"
-
 #include "app.h"
 
 CefMainArgs get_main_args(int argc, char** argv)
@@ -85,6 +84,7 @@ int app_run(App* app, int argc, char** argv)
         CefString(&cef_settings.browser_subprocess_path).FromString(browser_subprocess_path);
     }
 
+    assert(&cef_settings);
     if (!CefInitialize(main_args, cef_settings, app->ref, nullptr))
     {
         return -1;

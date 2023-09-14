@@ -20,7 +20,7 @@ use tokio::{
 
 use crate::{
     app::RawApp,
-    ptr::{from_c_str, AsCStr},
+    ptr::{from_c_str, release_c_str, to_c_str, AsCStr},
     ActionState, ImeAction, Modifiers, MouseAction, TouchEventType, TouchPointerType,
 };
 
@@ -74,6 +74,12 @@ struct RawBrowserSettings {
     is_offscreen: bool,
 }
 
+impl Drop for RawBrowserSettings {
+    fn drop(&mut self) {
+        release_c_str(self.url);
+    }
+}
+
 #[repr(C)]
 pub(crate) struct RawBrowser {
     r#ref: *const c_void,
@@ -87,6 +93,7 @@ extern "C" {
         ctx: *mut c_void,
     ) -> *const RawBrowser;
     fn browser_exit(browser: *const RawBrowser);
+    fn browser_resize(browser: *const RawBrowser, width: c_int, height: c_int);
 }
 
 pub struct HWND(pub *const c_void);
@@ -94,8 +101,14 @@ pub struct HWND(pub *const c_void);
 unsafe impl Send for HWND {}
 unsafe impl Sync for HWND {}
 
+impl Default for HWND {
+    fn default() -> Self {
+        Self(null())
+    }
+}
+
 pub struct BrowserSettings<'a> {
-    pub url: Option<&'a str>,
+    pub url: &'a str,
     pub window_handle: HWND,
     pub frame_rate: u32,
     pub width: u32,
@@ -104,10 +117,10 @@ pub struct BrowserSettings<'a> {
     pub is_offscreen: bool,
 }
 
-impl Into<RawBrowserSettings> for BrowserSettings<'_> {
+impl Into<RawBrowserSettings> for &BrowserSettings<'_> {
     fn into(self) -> RawBrowserSettings {
         RawBrowserSettings {
-            url: self.url.as_c_str().ptr,
+            url: to_c_str(self.url),
             window_handle: self.window_handle.0,
             frame_rate: self.frame_rate,
             width: self.width,
@@ -122,24 +135,24 @@ impl Into<RawBrowserSettings> for BrowserSettings<'_> {
 pub trait Observer: Send + Sync {
     fn on_state_change(&self, state: BrowserState) {}
     fn on_ime_rect(&self, rect: Rect) {}
-    fn on_frame(&self, buf: &[u8], width: u32, height: u32) {}
+    fn on_frame(&self, texture: &[u8], width: u32, height: u32) {}
     fn on_title_change(&self, title: String) {}
     fn on_fullscreen_change(&self, fullscreen: bool) {}
 }
 
-enum ObserverMsg {
+enum ChannelEvents {
     StateChange(BrowserState),
 }
 
 #[derive(Clone)]
 struct Delegation {
     observer: Arc<dyn Observer>,
-    tx: Arc<UnboundedSender<ObserverMsg>>,
+    tx: Arc<UnboundedSender<ChannelEvents>>,
     on_bridge_callback: Arc<RwLock<Option<BridgeOnContext>>>,
 }
 
 impl Delegation {
-    fn new<T>(observer: T) -> (Self, UnboundedReceiver<ObserverMsg>)
+    fn new<T>(observer: T) -> (Self, UnboundedReceiver<ChannelEvents>)
     where
         T: Observer + 'static,
     {
@@ -159,7 +172,9 @@ pub struct Browser {
     runtime: Handle,
     #[allow(unused)]
     delegation: Delegation,
-    settings: *mut RawBrowserSettings,
+    delegation_ptr: *mut Delegation,
+    #[allow(unused)]
+    settings: RawBrowserSettings,
     ptr: *const RawBrowser,
 }
 
@@ -169,39 +184,32 @@ unsafe impl Sync for Browser {}
 impl Browser {
     pub(crate) async fn new<T>(
         app: *const RawApp,
-        settings: BrowserSettings<'_>,
+        settings: &BrowserSettings<'_>,
         observer: T,
     ) -> Result<Arc<Self>>
     where
         T: Observer + 'static,
     {
-        let runtime = Handle::current();
+        let settings = settings.into();
         let (delegation, mut receiver) = Delegation::new(observer);
-        let settings = Box::into_raw(Box::new(settings.into()));
-        let ptr = unsafe {
-            create_browser(
-                app,
-                settings,
-                BROWSER_OBSERVER,
-                &delegation as *const _ as *mut _,
-            )
-        };
+        let delegation_ptr = Box::into_raw(Box::new(delegation.clone()));
+        let ptr =
+            unsafe { create_browser(app, &settings, BROWSER_OBSERVER, delegation_ptr as *mut _) };
 
         let (created_tx, created_rx) = oneshot::channel::<bool>();
         let delegation_ = delegation.clone();
         tokio::spawn(async move {
             let mut tx = Some(created_tx);
-
-            while let Some(msg) = receiver.recv().await {
-                match msg {
-                    ObserverMsg::StateChange(state) => {
+            while let Some(events) = receiver.recv().await {
+                match events {
+                    ChannelEvents::StateChange(state) => {
                         delegation_.observer.on_state_change(state);
                         match state {
                             BrowserState::LoadError => {
-                                tx.take().map(|tx| tx.send(true));
+                                tx.take().map(|tx| tx.send(false));
                             }
                             BrowserState::Load => {
-                                tx.take().map(|tx| tx.send(false));
+                                tx.take().map(|tx| tx.send(true));
                             }
                             _ => (),
                         }
@@ -215,9 +223,10 @@ impl Browser {
         }
 
         Ok(Arc::new(Self {
+            runtime: Handle::current(),
+            delegation_ptr,
             delegation,
             settings,
-            runtime,
             ptr,
         }))
     }
@@ -273,11 +282,15 @@ impl Browser {
     pub fn on_ime(&self, action: ImeAction) {
         Control::on_ime(self.ptr, action)
     }
+
+    pub fn resize(&self, width: u32, height: u32) {
+        unsafe { browser_resize(self.ptr, width as c_int, height as c_int) }
+    }
 }
 
 impl Drop for Browser {
     fn drop(&mut self) {
-        drop(unsafe { Box::from_raw(self.settings) });
+        drop(unsafe { Box::from_raw(self.delegation_ptr) });
         unsafe { browser_exit(self.ptr) }
     }
 }
@@ -292,22 +305,21 @@ static BROWSER_OBSERVER: RawBrowserObserver = RawBrowserObserver {
 };
 
 extern "C" fn on_state_change(state: BrowserState, ctx: *mut c_void) {
-    let delegation = unsafe { &*(ctx as *mut Delegation) };
-    delegation
+    (unsafe { &*(ctx as *mut Delegation) })
         .tx
-        .send(ObserverMsg::StateChange(state))
+        .send(ChannelEvents::StateChange(state))
         .expect("channel is closed, message send failed!");
 }
 
 extern "C" fn on_ime_rect(rect: Rect, ctx: *mut c_void) {
-    let delegation = unsafe { &*(ctx as *mut Delegation) };
-    delegation.observer.on_ime_rect(rect);
+    (unsafe { &*(ctx as *mut Delegation) })
+        .observer
+        .on_ime_rect(rect);
 }
 
-extern "C" fn on_frame(buf: *const c_void, width: c_int, height: c_int, ctx: *mut c_void) {
-    let delegation = unsafe { &*(ctx as *mut Delegation) };
-    delegation.observer.on_frame(
-        unsafe { from_raw_parts(buf as *const _, width as usize * height as usize * 4) },
+extern "C" fn on_frame(texture: *const c_void, width: c_int, height: c_int, ctx: *mut c_void) {
+    (unsafe { &*(ctx as *mut Delegation) }).observer.on_frame(
+        unsafe { from_raw_parts(texture as *const _, width as usize * height as usize * 4) },
         width as u32,
         height as u32,
     );
@@ -315,14 +327,16 @@ extern "C" fn on_frame(buf: *const c_void, width: c_int, height: c_int, ctx: *mu
 
 extern "C" fn on_title_change(title: *const c_char, ctx: *mut c_void) {
     if let Some(title) = from_c_str(title) {
-        let delegation = unsafe { &*(ctx as *mut Delegation) };
-        delegation.observer.on_title_change(title);
+        (unsafe { &*(ctx as *mut Delegation) })
+            .observer
+            .on_title_change(title);
     }
 }
 
 extern "C" fn on_fullscreen_change(fullscreen: bool, ctx: *mut c_void) {
-    let delegation = unsafe { &*(ctx as *mut Delegation) };
-    delegation.observer.on_fullscreen_change(fullscreen);
+    (unsafe { &*(ctx as *mut Delegation) })
+        .observer
+        .on_fullscreen_change(fullscreen);
 }
 
 extern "C" fn on_bridge(
@@ -331,9 +345,8 @@ extern "C" fn on_bridge(
     callback_ctx: *mut c_void,
     callback: BridgeOnCallback,
 ) {
-    let delegation = unsafe { &*(ctx as *mut Delegation) };
     from_c_str(req).map(|req| {
-        delegation
+        (unsafe { &*(ctx as *mut Delegation) })
             .on_bridge_callback
             .read()
             .unwrap()

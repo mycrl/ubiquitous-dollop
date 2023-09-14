@@ -25,23 +25,21 @@ fn download_cef(out_dir: &str, cef_version: &str) {
             ),
             out_dir,
         )
-        .expect("download cef release failed!");
+        .unwrap();
     }
 
     if fs::metadata(&cef_path).is_err() {
         let path = format!("./{}_windows64_minimal", cef_version);
         if fs::metadata(join(&out_dir, &path)).is_err() {
-            exec("tar -xf ./cef.tar.bz2 -C ./", out_dir)
-                .expect("failed to decompress the cef release file!");
+            exec("tar -xf ./cef.tar.bz2 -C ./", out_dir).unwrap();
         }
 
-        exec(&format!("Rename-Item {} ./cef", path), out_dir)
-            .expect("failed to rename the cef release file!");
+        exec(&format!("Rename-Item {} ./cef", path), out_dir).unwrap();
     }
 
     if fs::metadata(join(&cef_path, "./libcef_dll_wrapper")).is_err() {
-        exec("cmake -DCMAKE_BUILD_TYPE=Release .", &cef_path).expect("failed to release the cef!");
-        exec("cmake --build . --config Release", &cef_path).expect("failed to release the cef!");
+        exec("cmake -DCMAKE_BUILD_TYPE=Release .", &cef_path).unwrap();
+        exec("cmake --build . --config Release", &cef_path).unwrap();
     }
 }
 
@@ -129,12 +127,13 @@ fn static_link(out_dir: &str, target: &str) {
 }
 
 fn main() {
-    println!("cargo:rerun-if-changed=./package/src");
-    println!("cargo:rerun-if-changed=./build.rs");
-
-    let cef_version = "cef_binary_116.0.21+g9c7dc32+chromium-116.0.5845.181";
+    let cef_version = "cef_binary_116.0.22+g480de66+chromium-116.0.5845.188";
     let target = env::var("TARGET").unwrap();
     let out_dir = env::var("OUT_DIR").unwrap();
+
+    println!("cargo:rerun-if-changed=./package/src");
+    println!("cargo:rerun-if-changed=./build.rs");
+    println!("cargo:CEF_RELEASE={}", &join(&out_dir, "./cef"));
 
     download_cef(&out_dir, cef_version);
     static_link(&out_dir, &target);

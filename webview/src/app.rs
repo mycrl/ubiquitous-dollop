@@ -1,14 +1,19 @@
 use std::{
     ffi::{c_char, c_int, c_void},
     sync::Arc,
+    thread,
 };
 
-use crate::{ptr::AsCStr, Browser, BrowserSettings, Observer};
+use crate::{
+    args_ptr,
+    ptr::{opt_to_c_str, release_c_str, AsCStr},
+    Browser, BrowserSettings, Observer,
+};
 
 use anyhow::{anyhow, Result};
-use tokio::{
-    runtime::Handle,
-    sync::oneshot::{self, Sender},
+use tokio::sync::{
+    oneshot::{self, Sender},
+    Notify,
 };
 
 #[repr(C)]
@@ -16,6 +21,14 @@ struct RawAppSettings {
     cache_path: *const c_char,
     browser_subprocess_path: *const c_char,
     scheme_path: *const c_char,
+}
+
+impl Drop for RawAppSettings {
+    fn drop(&mut self) {
+        release_c_str(self.cache_path);
+        release_c_str(self.scheme_path);
+        release_c_str(self.browser_subprocess_path);
+    }
 }
 
 #[repr(C)]
@@ -42,18 +55,20 @@ pub struct AppSettings<'a> {
     pub scheme_path: Option<&'a str>,
 }
 
-impl Into<RawAppSettings> for AppSettings<'_> {
+impl Into<RawAppSettings> for &AppSettings<'_> {
     fn into(self) -> RawAppSettings {
         RawAppSettings {
-            cache_path: self.cache_path.as_c_str().ptr,
-            scheme_path: self.scheme_path.as_c_str().ptr,
-            browser_subprocess_path: self.browser_subprocess_path.as_c_str().ptr,
+            cache_path: opt_to_c_str(self.cache_path),
+            scheme_path: opt_to_c_str(self.scheme_path),
+            browser_subprocess_path: opt_to_c_str(self.browser_subprocess_path),
         }
     }
 }
 
 pub struct App {
-    settings: *mut RawAppSettings,
+    notify: Notify,
+    #[allow(unused)]
+    settings: RawAppSettings,
     ptr: *const RawApp,
 }
 
@@ -61,12 +76,12 @@ unsafe impl Send for App {}
 unsafe impl Sync for App {}
 
 impl App {
-    pub async fn new(settings: AppSettings<'_>) -> Result<Arc<Self>> {
-        let settings = Box::into_raw(Box::new(settings.into()));
+    pub async fn new(settings: &AppSettings<'_>) -> Result<Arc<Self>> {
+        let settings = settings.into();
         let (tx, rx) = oneshot::channel::<()>();
         let ptr = unsafe {
             create_app(
-                settings,
+                &settings,
                 create_app_callback,
                 Box::into_raw(Box::new(tx)) as *mut _,
             )
@@ -76,13 +91,30 @@ impl App {
             return Err(anyhow!("create app failed!"));
         }
 
+        let this = Arc::new(Self {
+            notify: Notify::new(),
+            settings,
+            ptr,
+        });
+
+        let this_ = this.clone();
+        thread::spawn(move || {
+            let args = args_ptr!();
+            let ret = unsafe { app_run(this_.ptr, args.len() as c_int, args.as_ptr()) };
+            if ret != 0 {
+                panic!("app runing failed!, code: {}", ret)
+            }
+
+            this_.notify.notify_waiters();
+        });
+
         rx.await?;
-        Ok(Arc::new(Self { settings, ptr }))
+        Ok(this)
     }
 
     pub async fn create_browser<T>(
         &self,
-        settings: BrowserSettings<'_>,
+        settings: &BrowserSettings<'_>,
         observer: T,
     ) -> Result<Arc<Browser>>
     where
@@ -91,30 +123,13 @@ impl App {
         Browser::new(self.ptr, settings, observer).await
     }
 
-    pub async fn run(self: Arc<Self>) -> Result<()> {
-        let args = std::env::args()
-            .map(|arg| arg.as_c_str())
-            .collect::<Vec<_>>();
-        let ret = Handle::current()
-            .spawn_blocking(move || unsafe {
-                let args = args
-                    .iter()
-                    .map(|arg| arg.ptr)
-                    .collect::<Vec<*const c_char>>();
-                app_run(self.ptr, args.len() as c_int, args.as_ptr())
-            })
-            .await?;
-        if ret != 0 {
-            return Err(anyhow!("app runing failed!, code: {}", ret));
-        }
-
-        Ok(())
+    pub async fn closed(&self) {
+        self.notify.notified().await;
     }
 }
 
 impl Drop for App {
     fn drop(&mut self) {
-        drop(unsafe { Box::from_raw(self.settings) });
         unsafe { app_exit(self.ptr) }
     }
 }

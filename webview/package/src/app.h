@@ -18,11 +18,7 @@
 class IApp : public CefApp, public CefBrowserProcessHandler
 {
 public:
-    IApp(AppSettings* settings, CreateAppCallback callback, void* ctx)
-        : _settings(settings), _callback(callback), _ctx(ctx)
-    {
-    }
-
+    IApp(AppSettings* settings, CreateAppCallback callback, void* ctx);
     ~IApp()
     {
         router->IClose();
