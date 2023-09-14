@@ -14,22 +14,6 @@ fn exec(cmd: &str, work_dir: &str) -> Result<ExitStatus, std::io::Error> {
         .status()
 }
 
-#[cfg(target_os = "linux")]
-fn exec(command: &str, work_dir: &str) -> std::io::Result<()> {
-    let output = Command::new("bash")
-        .arg("-c")
-        .arg(command)
-        .current_dir(work_dir)
-        .output()?;
-
-    if !output.status.success() {
-        let error_msg = String::from_utf8_lossy(&output.stderr);
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, error_msg));
-    }
-
-    Ok(())
-}
-
 #[cfg(target_os = "windows")]
 fn download_cef(out_dir: &str, cef_version: &str) {
     let cef_path = join(&out_dir, "./cef");
@@ -41,7 +25,7 @@ fn download_cef(out_dir: &str, cef_version: &str) {
             ),
             out_dir,
         )
-        .expect("download cef binary failed!");
+        .expect("download cef release failed!");
     }
 
     if fs::metadata(&cef_path).is_err() {
@@ -56,29 +40,9 @@ fn download_cef(out_dir: &str, cef_version: &str) {
     }
 
     if fs::metadata(join(&cef_path, "./libcef_dll_wrapper")).is_err() {
-        exec("cmake -DCMAKE_BUILD_TYPE=Release .", &cef_path).expect("failed to release cef!");
-        exec("cmake --build . --config Release", &cef_path).expect("failed to release cef!");
+        exec("cmake -DCMAKE_BUILD_TYPE=Release .", &cef_path).expect("failed to release the cef!");
+        exec("cmake --build . --config Release", &cef_path).expect("failed to release the cef!");
     }
-}
-
-#[cfg(target_os = "linux")]
-fn download_cef(out_dir: &str, cef_version: &str) {
-    #[cfg(target_arch = "aarch64")]
-    let arch = "linuxarm64";
-    #[cfg(not(target_arch = "aarch64"))]
-    let arch = "linux64";
-
-    exec(
-        &format!(
-            "wget https://cef-builds.spotifycdn.com/{}_{}_minimal.tar.bz2",
-            cef_version, arch,
-        ),
-        out_dir,
-    )
-    .expect("download cef binary failed!");
-
-    exec(&format!("tar -xvzf linux-{}.tar.gz -C ./", arch), out_dir)
-        .expect("failed to decompress the cef release file!");
 }
 
 fn static_link(out_dir: &str, target: &str) {
@@ -133,9 +97,6 @@ fn static_link(out_dir: &str, target: &str) {
 
     #[cfg(target_os = "linux")]
     cfgs.define("LINUX", Some("1")).define("CEF_X11", Some("1"));
-
-    #[cfg(target_os = "macos")]
-    cfgs.define("MACOS", Some("1"));
 
     cfgs.compile("package");
 

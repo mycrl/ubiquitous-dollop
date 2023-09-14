@@ -13,6 +13,7 @@ members = [
 anyhow = "1.0.75"
 wgpu = "0.17.0"
 winit = "0.28.6"
+webview = { path = "./webview" }
 
 [dependencies.tokio]
 version = "1.32.0"

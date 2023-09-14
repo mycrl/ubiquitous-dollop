@@ -1,9 +1,11 @@
 mod render;
+mod wenview;
 
 use std::{sync::Arc, thread, time::Duration};
 
 use render::Render;
 use tokio::runtime::Runtime;
+use wenview::Webview;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -15,6 +17,7 @@ fn main() -> anyhow::Result<()> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop)?;
     let render = Arc::new(runtime.block_on(async { Render::new(&window).await })?);
+    let webview = runtime.block_on(async { Webview::new().await })?;
 
     let mut rgb = [0u8; 3];
     thread::spawn(move || loop {
