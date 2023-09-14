@@ -130,6 +130,7 @@ fn main() {
     let cef_version = "cef_binary_116.0.22+g480de66+chromium-116.0.5845.188";
     let target = env::var("TARGET").unwrap();
     let out_dir = env::var("OUT_DIR").unwrap();
+    let temp = env::var("TEMP").unwrap();
 
     println!("cargo:rerun-if-changed=./package/src");
     println!("cargo:rerun-if-changed=./build.rs");
@@ -137,4 +138,11 @@ fn main() {
 
     download_cef(&out_dir, cef_version);
     static_link(&out_dir, &target);
+
+    let temp_cef = join(&temp, &cef_version);
+    if fs::metadata(&temp_cef).is_err() {
+        fs::create_dir(&temp_cef).unwrap();
+        exec(&format!("cp -r ./cef/Resources/* {}", &temp_cef), &out_dir).unwrap();
+        exec(&format!("cp ./cef/Release/* {}", &temp_cef), &out_dir).unwrap();
+    }
 }

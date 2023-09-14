@@ -1,10 +1,16 @@
-use std::{thread, time::*};
+use std::{
+    ptr::null,
+    sync::mpsc::{channel, Sender},
+    thread,
+    time::Duration,
+};
 
-use minifb::*;
-use std::ptr::null;
-use std::sync::mpsc::*;
+use minifb::{MouseButton, MouseMode, Window, WindowOptions};
 use tokio::runtime::Runtime;
-use webview::*;
+use webview::{
+    execute_subprocess, is_subprocess, ActionState, App, AppSettings, BrowserSettings, MouseAction,
+    MouseButtons, Observer, Position, HWND,
+};
 
 struct BrowserObserver {
     sender: Sender<Vec<u8>>,
