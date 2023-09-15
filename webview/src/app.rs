@@ -49,6 +49,7 @@ extern "C" {
     fn app_exit(app: *const RawApp);
 }
 
+#[derive(Debug)]
 pub struct AppSettings<'a> {
     pub cache_path: Option<&'a str>,
     pub browser_subprocess_path: Option<&'a str>,
@@ -67,8 +68,7 @@ impl Into<RawAppSettings> for &AppSettings<'_> {
 
 pub struct App {
     notify: Notify,
-    #[allow(unused)]
-    settings: RawAppSettings,
+    settings: *mut RawAppSettings,
     ptr: *const RawApp,
 }
 
@@ -77,11 +77,11 @@ unsafe impl Sync for App {}
 
 impl App {
     pub async fn new(settings: &AppSettings<'_>) -> Result<Arc<Self>> {
-        let settings = settings.into();
+        let settings = Box::into_raw(Box::new(settings.into()));
         let (tx, rx) = oneshot::channel::<()>();
         let ptr = unsafe {
             create_app(
-                &settings,
+                settings,
                 create_app_callback,
                 Box::into_raw(Box::new(tx)) as *mut _,
             )
@@ -131,6 +131,7 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         unsafe { app_exit(self.ptr) }
+        drop(unsafe { Box::from_raw(self.settings) });
     }
 }
 

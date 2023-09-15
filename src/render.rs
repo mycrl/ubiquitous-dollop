@@ -35,8 +35,6 @@ impl Render {
             .unwrap()
             .frame_mut()
             .copy_from_slice(texture);
-
-        self.redraw().unwrap();
     }
 
     pub fn redraw(&self) -> Result<()> {

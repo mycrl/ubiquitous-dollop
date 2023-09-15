@@ -11,7 +11,7 @@ members = [
 
 [dependencies]
 anyhow = "1.0.75"
-winit = "0.28.6"
+winit = { git = "https://github.com/rust-windowing/winit", branch = "v0.29.x" }
 webview = { path = "./webview" }
 pixels = "0.13.0"
 

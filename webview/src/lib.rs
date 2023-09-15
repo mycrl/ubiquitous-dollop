@@ -13,8 +13,8 @@ pub use app::{App, AppSettings};
 pub use browser::{
     bridge::BridgeObserver,
     control::{
-        ActionState, ImeAction, Modifiers, MouseAction, MouseButtons, Position, TouchEventType,
-        TouchPointerType,
+        ActionState, ImeAction, Modifiers, MouseAction, MouseButtons, Position, Rect,
+        TouchEventType, TouchPointerType,
     },
     Browser, BrowserSettings, BrowserState, Observer, HWND,
 };

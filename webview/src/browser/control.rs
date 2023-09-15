@@ -5,6 +5,7 @@ use crate::ptr::AsCStr;
 use super::RawBrowser;
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct Rect {
     pub x: c_int,
     pub y: c_int,
@@ -108,6 +109,7 @@ pub enum MouseAction {
     Wheel(Position),
 }
 
+#[derive(Debug)]
 pub enum ImeAction<'a> {
     Composition(&'a str),
     Pre(&'a str, i32, i32),

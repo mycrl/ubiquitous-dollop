@@ -9,28 +9,49 @@ use std::{
 use anyhow::Result;
 use webview::{
     ActionState, App, AppSettings, Browser, BrowserSettings, ImeAction, Modifiers, MouseAction,
-    MouseButtons, Observer, Position,
+    MouseButtons, Observer, Position, Rect, HWND,
 };
+
 use winit::{
-    event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent, VirtualKeyCode, ModifiersState},
-    window::Window,
+    dpi::{LogicalSize, LogicalPosition},
+    event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent},
+    keyboard::{Key, KeyCode, ModifiersState},
+    platform::scancode::KeyCodeExtScancode,
+    window::{
+        raw_window_handle::{HasRawWindowHandle, RawWindowHandle},
+        Fullscreen, Window,
+    },
 };
 
 use crate::render::Render;
 
-pub struct WebviewInfo<'a> {
-    pub url: &'a str,
-    pub width: u32,
-    pub height: u32,
-}
-
 struct WebviewObserver {
     render: Arc<Render>,
+    window: Arc<Window>,
 }
 
 impl Observer for WebviewObserver {
     fn on_frame(&self, texture: &[u8], width: u32, height: u32) {
         self.render.input_webview_texture(texture, width, height);
+    }
+
+    fn on_ime_rect(&self, rect: Rect) {
+        self.window.set_ime_cursor_area(
+            LogicalPosition::new(rect.x + rect.width, rect.y + rect.height),
+            LogicalSize::new(rect.width, rect.height),
+        );
+    }
+
+    fn on_fullscreen_change(&self, fullscreen: bool) {
+        self.window.set_fullscreen(if fullscreen {
+            Some(Fullscreen::Borderless(None))
+        } else {
+            None
+        });
+    }
+
+    fn on_title_change(&self, _title: String) {
+        // self.window.set_title(&title);
     }
 }
 
@@ -43,7 +64,7 @@ pub struct Webview {
 }
 
 impl Webview {
-    pub async fn new(info: WebviewInfo<'_>, render: Arc<Render>) -> Result<Self> {
+    pub async fn new(url: &str, render: Arc<Render>, window: Arc<Window>) -> Result<Self> {
         let app = App::new(&AppSettings {
             cache_path: None,
             browser_subprocess_path: None,
@@ -51,18 +72,25 @@ impl Webview {
         })
         .await?;
 
+        let window_handle = match window.raw_window_handle() {
+            RawWindowHandle::Win32(handle) => HWND(handle.hwnd),
+            RawWindowHandle::WinRt(handle) => HWND(handle.core_window),
+            _ => HWND::default(),
+        };
+
+        let size = window.inner_size();
         let browser = app
             .create_browser(
                 &BrowserSettings {
-                    url: info.url,
-                    window_handle: webview::HWND::default(),
-                    frame_rate: 60,
-                    width: info.width,
-                    height: info.height,
                     device_scale_factor: 1.0,
                     is_offscreen: true,
+                    height: size.height,
+                    width: size.width,
+                    frame_rate: 60,
+                    window_handle,
+                    url,
                 },
-                WebviewObserver { render },
+                WebviewObserver { render, window },
             )
             .await?;
 
@@ -74,7 +102,7 @@ impl Webview {
         })
     }
 
-    pub fn input(&self, events: WindowEvent, window: &Window) {
+    pub fn input(&self, events: WindowEvent, _window: &Window) {
         match events {
             WindowEvent::Resized(size) => self.browser.resize(size.width, size.height),
             WindowEvent::Ime(ime) => {
@@ -84,41 +112,44 @@ impl Webview {
 
                         // Because the keyboard input event is triggered before the ime event, a
                         // character entered because the keyboard input event is triggered is deleted first.
-                        //
-                        // scan_code: 14 == delete
-                        self.browser
-                            .on_keyboard(14, ActionState::Down, Modifiers::None);
-                        self.browser
-                            .on_keyboard(14, ActionState::Up, Modifiers::None);
+                        for state in [ActionState::Down, ActionState::Up] {
+                            self.browser.on_keyboard(
+                                KeyCode::Backspace.to_scancode().unwrap(),
+                                state,
+                                Modifiers::None,
+                            );
+                        }
                     }
                     Ime::Disabled => {
                         self.ime_enabled.set(false);
                     }
                     Ime::Commit(input) => {
-                        self.browser.on_ime(ImeAction::Composition(input.as_str()));
+                        self.browser.on_ime(ImeAction::Composition(&input));
                     }
                     Ime::Preedit(input, pos) => {
                         if let Some((x, y)) = pos {
                             self.browser
-                                .on_ime(ImeAction::Pre(input.as_str(), x as i32, y as i32));
+                                .on_ime(ImeAction::Pre(&input, x as i32, y as i32));
                         }
                     }
                 }
             }
-            WindowEvent::KeyboardInput { input, .. } => {
-                if let Some(key) = input.virtual_keycode {
-                    if !self.ime_enabled.get() {
-                        let allow = if input.repeat {
-                            !(key == VirtualKeyCode::Shift || key == VirtualKeyCode::Control || key == VirtualKeyCode::At)
-                        } else {
-                            true
-                        };
+            WindowEvent::KeyboardInput { event, .. } => {
+                if !self.ime_enabled.get() {
+                    let allow = if event.repeat {
+                        !(event.logical_key == Key::Shift
+                            || event.logical_key == Key::Control
+                            || event.logical_key == Key::Alt)
+                    } else {
+                        true
+                    };
 
-                        if allow {
+                    if allow {
+                        if let Some(code) = event.physical_key.to_scancode() {
                             let modifiers = self.modifiers.get();
                             self.browser.on_keyboard(
-                                input.scancode,
-                                match input.state {
+                                code,
+                                match event.state {
                                     winit::event::ElementState::Pressed => ActionState::Down,
                                     winit::event::ElementState::Released => ActionState::Up,
                                 },
@@ -129,16 +160,12 @@ impl Webview {
                 }
             }
             WindowEvent::ModifiersChanged(state) => {
-                self.modifiers.set(if state.is_empty() {
-                    Modifiers::None
-                } else {
-                    match state {
-                        ModifiersState::ALT => Modifiers::Alt,
-                        ModifiersState::CTRL => Modifiers::Ctrl,
-                        ModifiersState::SHIFT => Modifiers::Shift,
-                        ModifiersState::LOGO => Modifiers::Win,
-                        _ => Modifiers::None,
-                    }
+                self.modifiers.set(match state.state() {
+                    ModifiersState::ALT => Modifiers::Alt,
+                    ModifiersState::CONTROL => Modifiers::Ctrl,
+                    ModifiersState::SHIFT => Modifiers::Shift,
+                    ModifiersState::SUPER => Modifiers::Win,
+                    _ => Modifiers::None,
                 });
             }
             WindowEvent::MouseWheel {
@@ -179,16 +206,20 @@ impl Webview {
 }
 
 trait EasyAtomic {
-    fn get(&self) -> bool;
-    fn set(&self, value: bool);
+    type Item;
+
+    fn get(&self) -> Self::Item;
+    fn set(&self, value: Self::Item);
 }
 
 impl EasyAtomic for AtomicBool {
-    fn get(&self) -> bool {
+    type Item = bool;
+
+    fn get(&self) -> Self::Item {
         self.load(Ordering::Relaxed)
     }
 
-    fn set(&self, value: bool) {
+    fn set(&self, value: Self::Item) {
         self.store(value, Ordering::Relaxed)
     }
 }

@@ -124,8 +124,12 @@ void IMEControl::OnIMESetComposition(std::string input, int x, int y)
         return;
     }
 
-    _browser.value()->GetHost()->ImeSetComposition(input, {}, CefRange::InvalidRange(),
-                                                   CefRange(0, y));
+    CefCompositionUnderline line;
+    line.style = CEF_CUS_DASH;
+    line.range = CefRange(0, y);
+
+    _browser.value()->GetHost()->ImeSetComposition(input, {line}, CefRange::InvalidRange(),
+                                                   CefRange(x, y));
 }
 
 void IMEControl::IClose()

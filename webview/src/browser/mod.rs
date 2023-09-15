@@ -94,12 +94,24 @@ extern "C" {
     ) -> *const RawBrowser;
     fn browser_exit(browser: *const RawBrowser);
     fn browser_resize(browser: *const RawBrowser, width: c_int, height: c_int);
+    fn browser_get_hwnd(browser: *const RawBrowser) -> *const c_void;
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct HWND(pub *const c_void);
 
 unsafe impl Send for HWND {}
 unsafe impl Sync for HWND {}
+
+impl HWND {
+    pub fn as_ptr(&self) -> *const c_void {
+        self.0
+    }
+
+    pub fn is_null(&self) -> bool {
+        !self.0.is_null()
+    }
+}
 
 impl Default for HWND {
     fn default() -> Self {
@@ -107,6 +119,7 @@ impl Default for HWND {
     }
 }
 
+#[derive(Debug)]
 pub struct BrowserSettings<'a> {
     pub url: &'a str,
     pub window_handle: HWND,
@@ -170,11 +183,9 @@ impl Delegation {
 
 pub struct Browser {
     runtime: Handle,
-    #[allow(unused)]
     delegation: Delegation,
     delegation_ptr: *mut Delegation,
-    #[allow(unused)]
-    settings: RawBrowserSettings,
+    settings: *mut RawBrowserSettings,
     ptr: *const RawBrowser,
 }
 
@@ -190,11 +201,11 @@ impl Browser {
     where
         T: Observer + 'static,
     {
-        let settings = settings.into();
+        let settings = Box::into_raw(Box::new(settings.into()));
         let (delegation, mut receiver) = Delegation::new(observer);
         let delegation_ptr = Box::into_raw(Box::new(delegation.clone()));
         let ptr =
-            unsafe { create_browser(app, &settings, BROWSER_OBSERVER, delegation_ptr as *mut _) };
+            unsafe { create_browser(app, settings, BROWSER_OBSERVER, delegation_ptr as *mut _) };
 
         let (created_tx, created_rx) = oneshot::channel::<bool>();
         let delegation_ = delegation.clone();
@@ -286,12 +297,17 @@ impl Browser {
     pub fn resize(&self, width: u32, height: u32) {
         unsafe { browser_resize(self.ptr, width as c_int, height as c_int) }
     }
+
+    pub fn window_handle(&self) -> HWND {
+        HWND(unsafe { browser_get_hwnd(self.ptr) })
+    }
 }
 
 impl Drop for Browser {
     fn drop(&mut self) {
-        drop(unsafe { Box::from_raw(self.delegation_ptr) });
         unsafe { browser_exit(self.ptr) }
+        drop(unsafe { Box::from_raw(self.delegation_ptr) });
+        drop(unsafe { Box::from_raw(self.settings) });
     }
 }
 
