@@ -6,13 +6,13 @@ edition = "2021"
 [workspace]
 resolver = "2"
 members = [
-    "webview"
+    "./crates/webview"
 ]
 
 [dependencies]
 anyhow = "1.0.75"
 winit = { git = "https://github.com/rust-windowing/winit", branch = "v0.29.x" }
-webview = { path = "./webview" }
+webview = { path = "./crates/webview" }
 pixels = "0.13.0"
 
 [dependencies.tokio]
