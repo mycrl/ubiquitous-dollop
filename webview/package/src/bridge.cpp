@@ -26,7 +26,7 @@ void MessageTransPort::Call(const std::string& req, Handler handler)
     }
 
     auto seq = _GetSeqNumber();
-    auto msg = CefProcessMessage::Create("__innerCallRequest");
+    auto msg = CefProcessMessage::Create("__inner_call_request");
     CefRefPtr<CefListValue> args = msg->GetArgumentList();
     args->SetSize(2);
     args->SetString(0, req);
@@ -51,13 +51,13 @@ bool MessageTransPort::OnMessage(CefRefPtr<CefProcessMessage> msg)
     CefRefPtr<CefListValue> args = msg->GetArgumentList();
     int seq_id = args->GetInt(args->GetSize() - 1);
 
-    if (kind_name == "__innerCallRequest")
+    if (kind_name == "__inner_call_request")
     {
         _HandleCallRequest(args, seq_id);
         return true;
     }
 
-    if (kind_name == "__innerCallResponse")
+    if (kind_name == "__inner_call_response")
     {
         _HandleCallResponse(args, seq_id);
         return true;
@@ -140,7 +140,7 @@ void MessageTransPort::_OnHandleCallback(std::string& res, bool is_err, int seq_
         return;
     }
 
-    auto msg = CefProcessMessage::Create("__innerCallResponse");
+    auto msg = CefProcessMessage::Create("__inner_call_response");
     CefRefPtr<CefListValue> args = msg->GetArgumentList();
     args->SetSize(3);
     args->SetBool(0, is_err);
