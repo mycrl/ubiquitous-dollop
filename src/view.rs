@@ -1,3 +1,5 @@
+use crate::render::Render;
+
 use std::{
     cell::Cell,
     sync::{
@@ -13,21 +15,25 @@ use webview::{
 };
 
 use winit::{
-    dpi::{LogicalSize, LogicalPosition},
     event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent},
+    event_loop::EventLoopProxy,
     keyboard::{Key, KeyCode, ModifiersState},
     platform::scancode::KeyCodeExtScancode,
     window::{
         raw_window_handle::{HasRawWindowHandle, RawWindowHandle},
-        Fullscreen, Window,
+        Window,
     },
 };
 
-use crate::render::Render;
+pub enum CustomEvent {
+    ImeRect(Rect),
+    TitleChange(String),
+    FullscreenChange(bool),
+}
 
 struct WebviewObserver {
     render: Arc<Render>,
-    window: Arc<Window>,
+    event_proxy: EventLoopProxy<CustomEvent>,
 }
 
 impl Observer for WebviewObserver {
@@ -36,22 +42,17 @@ impl Observer for WebviewObserver {
     }
 
     fn on_ime_rect(&self, rect: Rect) {
-        self.window.set_ime_cursor_area(
-            LogicalPosition::new(rect.x + rect.width, rect.y + rect.height),
-            LogicalSize::new(rect.width, rect.height),
-        );
+        let _ = self.event_proxy.send_event(CustomEvent::ImeRect(rect));
     }
 
     fn on_fullscreen_change(&self, fullscreen: bool) {
-        self.window.set_fullscreen(if fullscreen {
-            Some(Fullscreen::Borderless(None))
-        } else {
-            None
-        });
+        let _ = self
+            .event_proxy
+            .send_event(CustomEvent::FullscreenChange(fullscreen));
     }
 
-    fn on_title_change(&self, _title: String) {
-        // self.window.set_title(&title);
+    fn on_title_change(&self, title: String) {
+        let _ = self.event_proxy.send_event(CustomEvent::TitleChange(title));
     }
 }
 
@@ -64,7 +65,12 @@ pub struct Webview {
 }
 
 impl Webview {
-    pub async fn new(url: &str, render: Arc<Render>, window: Arc<Window>) -> Result<Self> {
+    pub async fn new(
+        url: &str,
+        render: Arc<Render>,
+        window: Arc<Window>,
+        event_proxy: EventLoopProxy<CustomEvent>,
+    ) -> Result<Self> {
         let app = App::new(&AppSettings {
             cache_path: None,
             browser_subprocess_path: None,
@@ -90,7 +96,10 @@ impl Webview {
                     window_handle,
                     url,
                 },
-                WebviewObserver { render, window },
+                WebviewObserver {
+                    render,
+                    event_proxy,
+                },
             )
             .await?;
 

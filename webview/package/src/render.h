@@ -14,7 +14,7 @@
 #include "include/cef_app.h"
 #include "webview.h"
 
-class IRender : public CefRenderHandler, public virtual CefBaseRefCounted
+class IRender : public CefRenderHandler
 {
 public:
     IRender(BrowserSettings* settings, BrowserObserver observer, void* ctx);

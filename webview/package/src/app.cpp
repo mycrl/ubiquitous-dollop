@@ -56,6 +56,12 @@ CefRefPtr<IBrowser> IApp::CreateBrowser(BrowserSettings* settings,
     {
         window_info.SetAsWindowless((CefWindowHandle)(settings->window_handle));
     }
+    else
+    {
+    #ifdef WIN32
+        window_info.SetAsPopup(nullptr, "");
+    #endif
+    }
 
     CefRefPtr<IBrowser> browser = new IBrowser(router, settings, observer, ctx);
     CefBrowserHost::CreateBrowser(window_info, browser, settings->url, broswer_settings, nullptr,
