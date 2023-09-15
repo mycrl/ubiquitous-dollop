@@ -1,11 +1,8 @@
 use crate::render::Render;
 
-use std::{
-    cell::Cell,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, RwLock,
 };
 
 use anyhow::Result;
@@ -57,11 +54,10 @@ impl Observer for WebviewObserver {
 }
 
 pub struct Webview {
-    #[allow(unused)]
     app: Arc<App>,
     browser: Arc<Browser>,
     ime_enabled: AtomicBool,
-    modifiers: Cell<Modifiers>,
+    modifiers: RwLock<Modifiers>,
 }
 
 impl Webview {
@@ -70,7 +66,7 @@ impl Webview {
         render: Arc<Render>,
         window: Arc<Window>,
         event_proxy: EventLoopProxy<CustomEvent>,
-    ) -> Result<Self> {
+    ) -> Result<Arc<Self>> {
         let app = App::new(&AppSettings {
             cache_path: None,
             browser_subprocess_path: None,
@@ -103,12 +99,12 @@ impl Webview {
             )
             .await?;
 
-        Ok(Self {
-            modifiers: Cell::new(Modifiers::None),
+        Ok(Arc::new(Self {
+            modifiers: RwLock::new(Modifiers::None),
             ime_enabled: AtomicBool::new(false),
             browser,
             app,
-        })
+        }))
     }
 
     pub fn input(&self, events: WindowEvent, _window: &Window) {
@@ -155,7 +151,7 @@ impl Webview {
 
                     if allow {
                         if let Some(code) = event.physical_key.to_scancode() {
-                            let modifiers = self.modifiers.get();
+                            let modifiers = *self.modifiers.read().unwrap();
                             self.browser.on_keyboard(
                                 code,
                                 match event.state {
@@ -169,13 +165,13 @@ impl Webview {
                 }
             }
             WindowEvent::ModifiersChanged(state) => {
-                self.modifiers.set(match state.state() {
+                *self.modifiers.write().unwrap() = match state.state() {
                     ModifiersState::ALT => Modifiers::Alt,
                     ModifiersState::CONTROL => Modifiers::Ctrl,
                     ModifiersState::SHIFT => Modifiers::Shift,
                     ModifiersState::SUPER => Modifiers::Win,
                     _ => Modifiers::None,
-                });
+                };
             }
             WindowEvent::MouseWheel {
                 delta, phase: _, ..
@@ -211,6 +207,10 @@ impl Webview {
             }
             _ => (),
         }
+    }
+
+    pub async fn closed(&self) {
+        self.app.closed().await
     }
 }
 

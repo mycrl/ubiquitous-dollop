@@ -30,6 +30,9 @@ fn main() -> anyhow::Result<()> {
             .build(&event_loop)?,
     );
 
+    window.set_ime_allowed(true);
+    window.set_resizable(true);
+
     let render = Render::new(&window)?;
     let webview = runtime.block_on(async {
         Webview::new(
@@ -42,13 +45,15 @@ fn main() -> anyhow::Result<()> {
     })?;
 
     let window_ = window.clone();
-    thread::spawn(move || loop {
+    runtime.spawn_blocking(move || loop {
         thread::sleep(Duration::from_millis(1000 / 60));
         window_.request_redraw();
     });
 
-    window.set_ime_allowed(true);
-    window.set_resizable(true);
+    let webview_ = webview.clone();
+    runtime.spawn(async move {
+        webview_.closed().await;
+    });
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::UserEvent(event) => match event {
