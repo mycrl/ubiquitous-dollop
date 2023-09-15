@@ -3,11 +3,18 @@ name = "ubiquitous-dollop"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+resolver = "2"
+members = [
+    "./crates/webview",
+    "./crates/librtc"
+]
+
 [dependencies]
 anyhow = "1.0.75"
 winit = { git = "https://github.com/rust-windowing/winit", branch = "v0.29.x" }
-webview = { git = "https://github.com/mycrl/webview-rs", branch = "v0.1.x" }
-webrtc = { git = "https://github.com/mycrl/librtc-rs", branch = "v0.1.x" }
+webview = { path = "./crates/webview" }
+librtc = { path = "./crates/librtc" }
 pixels = "0.13.0"
 
 [dependencies.tokio]
