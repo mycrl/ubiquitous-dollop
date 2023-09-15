@@ -51,8 +51,10 @@ fn main() -> anyhow::Result<()> {
     });
 
     let webview_ = webview.clone();
+    let event_proxy = event_loop.create_proxy();
     runtime.spawn(async move {
         webview_.closed().await;
+        let _ = event_proxy.send_event(CustomEvent::Closed);
     });
 
     event_loop.run(move |event, _, control_flow| match event {
@@ -72,6 +74,9 @@ fn main() -> anyhow::Result<()> {
             }
             CustomEvent::TitleChange(title) => {
                 window.set_title(&title);
+            }
+            CustomEvent::Closed => {
+                *control_flow = ControlFlow::Exit;
             }
         },
         Event::WindowEvent { event, .. } => {

@@ -26,6 +26,7 @@ pub enum CustomEvent {
     ImeRect(Rect),
     TitleChange(String),
     FullscreenChange(bool),
+    Closed,
 }
 
 struct WebviewObserver {
