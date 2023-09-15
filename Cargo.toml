@@ -7,6 +7,7 @@ edition = "2021"
 anyhow = "1.0.75"
 winit = { git = "https://github.com/rust-windowing/winit", branch = "v0.29.x" }
 webview = { git = "https://github.com/mycrl/webview-rs", branch = "v0.1.x" }
+webrtc = { git = "https://github.com/mycrl/librtc-rs", branch = "v0.1.x" }
 pixels = "0.13.0"
 
 [dependencies.tokio]

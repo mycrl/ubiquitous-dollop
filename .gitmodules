@@ -1,0 +1,6 @@
+[submodule "crates/webview"]
+	path = crates/webview
+	url = https://github.com/mycrl/webview-rs
+[submodule "crates/librtc"]
+	path = crates/librtc
+	url = https://github.com/mycrl/librtc-rs
