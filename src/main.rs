@@ -1,8 +1,11 @@
+mod config;
 mod render;
 mod view;
 
-use std::{sync::Arc, thread, time::Duration};
+use std::sync::Arc;
 
+use config::Config;
+use dotenv::dotenv;
 use render::Render;
 use tokio::runtime::Runtime;
 use view::{CustomEvent, Webview};
@@ -15,17 +18,19 @@ use winit::{
 };
 
 fn main() -> anyhow::Result<()> {
+    let _ = dotenv();
     if is_subprocess() {
         execute_subprocess();
     }
 
+    let config = Config::new();
     let runtime = Runtime::new()?;
     let event_loop = EventLoopBuilder::<CustomEvent>::with_user_event().build()?;
     let window = Arc::new(
         WindowBuilder::new()
             .with_min_inner_size(PhysicalSize {
-                width: 1280,
-                height: 720,
+                width: 1920,
+                height: 1080,
             })
             .build(&event_loop)?,
     );
@@ -36,19 +41,13 @@ fn main() -> anyhow::Result<()> {
     let render = Render::new(&window)?;
     let webview = runtime.block_on(async {
         Webview::new(
-            "https://baidu.com",
+            &config.url,
             render.clone(),
             window.clone(),
             event_loop.create_proxy(),
         )
         .await
     })?;
-
-    let window_ = window.clone();
-    runtime.spawn_blocking(move || loop {
-        thread::sleep(Duration::from_millis(1000 / 60));
-        window_.request_redraw();
-    });
 
     let webview_ = webview.clone();
     let event_proxy = event_loop.create_proxy();
@@ -57,44 +56,50 @@ fn main() -> anyhow::Result<()> {
         let _ = event_proxy.send_event(CustomEvent::Closed);
     });
 
-    event_loop.run(move |event, _, control_flow| match event {
-        Event::UserEvent(event) => match event {
-            CustomEvent::ImeRect(rect) => {
-                window.set_ime_cursor_area(
-                    LogicalPosition::new(rect.x + rect.width, rect.y + rect.height),
-                    LogicalSize::new(rect.width, rect.height),
-                );
-            }
-            CustomEvent::FullscreenChange(fullscreen) => {
-                window.set_fullscreen(if fullscreen {
-                    Some(Fullscreen::Borderless(None))
-                } else {
-                    None
-                });
-            }
-            CustomEvent::TitleChange(title) => {
-                window.set_title(&title);
-            }
-            CustomEvent::Closed => {
-                *control_flow = ControlFlow::Exit;
-            }
-        },
-        Event::WindowEvent { event, .. } => {
-            webview.input(event.clone(), &window);
-            match event {
-                WindowEvent::CloseRequested => {
+    event_loop.run(move |event, _, control_flow| {
+        match event {
+            Event::UserEvent(event) => match event {
+                CustomEvent::ImeRect(rect) => {
+                    window.set_ime_cursor_area(
+                        LogicalPosition::new(rect.x + rect.width, rect.y + rect.height),
+                        LogicalSize::new(rect.width, rect.height),
+                    );
+                }
+                CustomEvent::FullscreenChange(fullscreen) => {
+                    window.set_fullscreen(if fullscreen {
+                        Some(Fullscreen::Borderless(None))
+                    } else {
+                        None
+                    });
+                }
+                CustomEvent::TitleChange(title) => {
+                    window.set_title(&title);
+                }
+                CustomEvent::Closed => {
                     *control_flow = ControlFlow::Exit;
                 }
-                WindowEvent::Resized(size) => {
-                    render.resize(size.width, size.height).unwrap();
+            },
+            Event::WindowEvent { event, .. } => {
+                webview.input(event.clone(), &window);
+                match event {
+                    WindowEvent::CloseRequested => {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    WindowEvent::Resized(size) => {
+                        render.resize(size.width, size.height).unwrap();
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
+            Event::RedrawRequested(_) => {
+                window.pre_present_notify();
+                render.redraw().unwrap();
+            }
+            Event::AboutToWait => {
+                window.request_redraw();
+            }
+            _ => (),
         }
-        Event::RedrawRequested(_) => {
-            render.redraw().unwrap();
-        }
-        _ => (),
     })?;
 
     Ok(())

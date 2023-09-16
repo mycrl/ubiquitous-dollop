@@ -12,11 +12,10 @@ members = [
 
 [dependencies]
 anyhow = "1.0.75"
-winit = { git = "https://github.com/rust-windowing/winit", branch = "v0.29.x" }
-webview = { path = "./crates/webview" }
+clap = { version = "4", features = ["derive", "env"] }
+dotenv = "0.15.0"
 librtc = { path = "./crates/librtc" }
 pixels = "0.13.0"
-
-[dependencies.tokio]
-version = "1.32.0"
-features = ["full"]
+tokio = { version = "1.32.0", features = ["full"] }
+webview = { path = "./crates/webview" }
+winit = { git = "https://github.com/rust-windowing/winit", branch = "v0.29.x" }

@@ -1167,7 +1167,6 @@ name = "librtc"
 version = "0.2.1"
 dependencies = [
  "anyhow",
- "cc",
  "clap",
  "cpal",
  "dotenv",
@@ -2310,6 +2309,8 @@ name = "ubiquitous-dollop"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
+ "dotenv",
  "librtc",
  "pixels",
  "tokio",
