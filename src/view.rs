@@ -1,4 +1,4 @@
-use crate::render::Render;
+use crate::{render::Render, config::Config};
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -63,7 +63,7 @@ pub struct Webview {
 
 impl Webview {
     pub async fn new(
-        url: &str,
+        config: Arc<Config>,
         render: Arc<Render>,
         window: Arc<Window>,
         event_proxy: EventLoopProxy<CustomEvent>,
@@ -85,13 +85,13 @@ impl Webview {
         let browser = app
             .create_browser(
                 &BrowserSettings {
-                    device_scale_factor: 1.0,
+                    device_scale_factor: window.scale_factor() as f32,
                     is_offscreen: true,
                     height: size.height,
                     width: size.width,
                     frame_rate: 60,
                     window_handle,
-                    url,
+                    url: &config.url,
                 },
                 WebviewObserver {
                     render,

@@ -41,7 +41,7 @@ fn main() -> anyhow::Result<()> {
     let render = Render::new(&window)?;
     let webview = runtime.block_on(async {
         Webview::new(
-            &config.url,
+            config.clone(),
             render.clone(),
             window.clone(),
             event_loop.create_proxy(),

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use clap::Parser;
 
 #[derive(Parser)]
@@ -12,7 +14,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new() -> Self {
-        Config::parse()
+    pub fn new() -> Arc<Self> {
+        Arc::new(Config::parse())
     }
 }
