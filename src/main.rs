@@ -1,6 +1,7 @@
 mod config;
 mod render;
 mod view;
+mod rtc;
 
 use std::sync::Arc;
 
@@ -37,6 +38,7 @@ fn main() -> anyhow::Result<()> {
 
     window.set_ime_allowed(true);
     window.set_resizable(true);
+    window.set_decorations(false);
 
     let render = Render::new(&window)?;
     let webview = runtime.block_on(async {
