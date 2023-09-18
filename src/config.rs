@@ -11,6 +11,8 @@ use clap::Parser;
 pub struct Config {
     #[arg(env, long, default_value = "webview://index.html")]
     pub url: String,
+    #[arg(env, long, default_value_t = false)]
+    pub devtools: bool,
 }
 
 impl Config {

@@ -100,6 +100,10 @@ impl Webview {
             )
             .await?;
 
+        if config.devtools {
+            browser.set_devtools_state(true);
+        }
+
         Ok(Arc::new(Self {
             modifiers: RwLock::new(Modifiers::None),
             ime_enabled: AtomicBool::new(false),

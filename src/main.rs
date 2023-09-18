@@ -29,8 +29,8 @@ fn main() -> anyhow::Result<()> {
     let window = Arc::new(
         WindowBuilder::new()
             .with_min_inner_size(PhysicalSize {
-                width: 1920,
-                height: 1080,
+                width: 800,
+                height: 600,
             })
             .build(&event_loop)?,
     );
