@@ -6,7 +6,7 @@ use librtc::{Observer, RTCConfiguration, RTCPeerConnection};
 struct RtcObserver;
 
 impl Observer for RtcObserver {
-    fn on_track(&self, track: librtc::MediaStreamTrack) {}
+    fn on_track(&self, _track: librtc::MediaStreamTrack) {}
 }
 
 pub struct Rtc {

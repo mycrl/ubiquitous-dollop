@@ -1,7 +1,11 @@
-use crate::{config::Config, render::Render};
+use crate::{
+    config::Config,
+    render::{Render, TexturePosition, TextureSize},
+    CustomEvent, utils::EasyAtomic,
+};
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::AtomicBool,
     Arc, RwLock,
 };
 
@@ -12,7 +16,7 @@ use webview::{
 };
 
 use winit::{
-    event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{ElementState, Event, Ime, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::EventLoopProxy,
     keyboard::{Key, KeyCode, ModifiersState},
     platform::scancode::KeyCodeExtScancode,
@@ -22,13 +26,6 @@ use winit::{
     },
 };
 
-pub enum CustomEvent {
-    ImeRect(Rect),
-    TitleChange(String),
-    FullscreenChange(bool),
-    Closed,
-}
-
 struct WebviewObserver {
     render: Arc<Render>,
     event_proxy: EventLoopProxy<CustomEvent>,
@@ -36,7 +33,11 @@ struct WebviewObserver {
 
 impl Observer for WebviewObserver {
     fn on_frame(&self, texture: &[u8], width: u32, height: u32) {
-        self.render.input_webview_texture(texture, width, height);
+        self.render.input_texture(
+            texture,
+            TextureSize { width, height },
+            TexturePosition { x: 0, y: 0 },
+        );
     }
 
     fn on_ime_rect(&self, rect: Rect) {
@@ -112,103 +113,110 @@ impl Webview {
         }))
     }
 
-    pub fn input(&self, events: WindowEvent, _window: &Window) {
+    pub fn input(&self, events: &Event<CustomEvent>, _window: &Window) {
         match events {
-            WindowEvent::Resized(size) => self.browser.resize(size.width, size.height),
-            WindowEvent::Ime(ime) => {
-                match ime {
-                    Ime::Enabled => {
-                        self.ime_enabled.set(true);
+            Event::WindowEvent { event, .. } => {
+                match event {
+                    WindowEvent::Resized(size) => self.browser.resize(size.width, size.height),
+                    WindowEvent::Ime(ime) => {
+                        match ime {
+                            Ime::Enabled => {
+                                self.ime_enabled.set(true);
 
-                        // Because the keyboard input event is triggered before the ime event, a
-                        // character entered because the keyboard input event is triggered is deleted first.
-                        for state in [ActionState::Down, ActionState::Up] {
-                            self.browser.on_keyboard(
-                                KeyCode::Backspace.to_scancode().unwrap(),
-                                state,
-                                Modifiers::None,
-                            );
+                                // Because the keyboard input event is triggered before the ime event, a
+                                // character entered because the keyboard input event is triggered is deleted first.
+                                for state in [ActionState::Down, ActionState::Up] {
+                                    self.browser.on_keyboard(
+                                        KeyCode::Backspace.to_scancode().unwrap(),
+                                        state,
+                                        Modifiers::None,
+                                    );
+                                }
+                            }
+                            Ime::Disabled => {
+                                self.ime_enabled.set(false);
+                            }
+                            Ime::Commit(input) => {
+                                self.browser.on_ime(ImeAction::Composition(&input));
+                            }
+                            Ime::Preedit(input, pos) => {
+                                if let Some((x, y)) = pos {
+                                    self.browser
+                                        .on_ime(ImeAction::Pre(&input, *x as i32, *y as i32));
+                                }
+                            }
                         }
                     }
-                    Ime::Disabled => {
-                        self.ime_enabled.set(false);
-                    }
-                    Ime::Commit(input) => {
-                        self.browser.on_ime(ImeAction::Composition(&input));
-                    }
-                    Ime::Preedit(input, pos) => {
-                        if let Some((x, y)) = pos {
-                            self.browser
-                                .on_ime(ImeAction::Pre(&input, x as i32, y as i32));
-                        }
-                    }
-                }
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                if !self.ime_enabled.get() {
-                    let allow = if event.repeat {
-                        !(event.logical_key == Key::Shift
-                            || event.logical_key == Key::Control
-                            || event.logical_key == Key::Alt)
-                    } else {
-                        true
-                    };
+                    WindowEvent::KeyboardInput { event, .. } => {
+                        if !self.ime_enabled.get() {
+                            let allow = if event.repeat {
+                                !(event.logical_key == Key::Shift
+                                    || event.logical_key == Key::Control
+                                    || event.logical_key == Key::Alt)
+                            } else {
+                                true
+                            };
 
-                    if allow {
-                        if let Some(code) = event.physical_key.to_scancode() {
-                            let modifiers = *self.modifiers.read().unwrap();
-                            self.browser.on_keyboard(
-                                code,
-                                match event.state {
-                                    winit::event::ElementState::Pressed => ActionState::Down,
-                                    winit::event::ElementState::Released => ActionState::Up,
-                                },
-                                modifiers,
-                            );
+                            if allow {
+                                if let Some(code) = event.physical_key.to_scancode() {
+                                    let modifiers = *self.modifiers.read().unwrap();
+                                    self.browser.on_keyboard(
+                                        code,
+                                        match event.state {
+                                            winit::event::ElementState::Pressed => {
+                                                ActionState::Down
+                                            }
+                                            winit::event::ElementState::Released => ActionState::Up,
+                                        },
+                                        modifiers,
+                                    );
+                                }
+                            }
                         }
                     }
-                }
-            }
-            WindowEvent::ModifiersChanged(state) => {
-                *self.modifiers.write().unwrap() = match state.state() {
-                    ModifiersState::ALT => Modifiers::Alt,
-                    ModifiersState::CONTROL => Modifiers::Ctrl,
-                    ModifiersState::SHIFT => Modifiers::Shift,
-                    ModifiersState::SUPER => Modifiers::Win,
-                    _ => Modifiers::None,
-                };
-            }
-            WindowEvent::MouseWheel {
-                delta, phase: _, ..
-            } => match delta {
-                MouseScrollDelta::LineDelta(delta_h, delta_v) => {
-                    self.browser.on_mouse(MouseAction::Wheel(Position {
-                        x: delta_h as i32,
-                        y: (delta_v * 24.) as i32,
-                    }));
-                }
-                _ => (),
-            },
-            WindowEvent::MouseInput { state, button, .. } => {
-                self.browser.on_mouse(MouseAction::Click(
-                    match button {
-                        MouseButton::Left => MouseButtons::Left,
-                        MouseButton::Right => MouseButtons::Right,
-                        MouseButton::Middle => MouseButtons::Middle,
-                        _ => MouseButtons::Left,
+                    WindowEvent::ModifiersChanged(state) => {
+                        *self.modifiers.write().unwrap() = match state.state() {
+                            ModifiersState::ALT => Modifiers::Alt,
+                            ModifiersState::CONTROL => Modifiers::Ctrl,
+                            ModifiersState::SHIFT => Modifiers::Shift,
+                            ModifiersState::SUPER => Modifiers::Win,
+                            _ => Modifiers::None,
+                        };
+                    }
+                    WindowEvent::MouseWheel {
+                        delta, phase: _, ..
+                    } => match delta {
+                        MouseScrollDelta::LineDelta(delta_h, delta_v) => {
+                            self.browser.on_mouse(MouseAction::Wheel(Position {
+                                x: *delta_h as i32,
+                                y: (delta_v * 100.) as i32,
+                            }));
+                        }
+                        _ => (),
                     },
-                    match state {
-                        ElementState::Pressed => ActionState::Down,
-                        ElementState::Released => ActionState::Up,
-                    },
-                    None,
-                ));
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                self.browser.on_mouse(MouseAction::Move(Position {
-                    x: position.x as i32,
-                    y: position.y as i32,
-                }));
+                    WindowEvent::MouseInput { state, button, .. } => {
+                        self.browser.on_mouse(MouseAction::Click(
+                            match button {
+                                MouseButton::Left => MouseButtons::Left,
+                                MouseButton::Right => MouseButtons::Right,
+                                MouseButton::Middle => MouseButtons::Middle,
+                                _ => MouseButtons::Left,
+                            },
+                            match state {
+                                ElementState::Pressed => ActionState::Down,
+                                ElementState::Released => ActionState::Up,
+                            },
+                            None,
+                        ));
+                    }
+                    WindowEvent::CursorMoved { position, .. } => {
+                        self.browser.on_mouse(MouseAction::Move(Position {
+                            x: position.x as i32,
+                            y: position.y as i32,
+                        }));
+                    }
+                    _ => (),
+                }
             }
             _ => (),
         }
@@ -216,24 +224,5 @@ impl Webview {
 
     pub async fn closed(&self) {
         self.app.closed().await
-    }
-}
-
-trait EasyAtomic {
-    type Item;
-
-    fn get(&self) -> Self::Item;
-    fn set(&self, value: Self::Item);
-}
-
-impl EasyAtomic for AtomicBool {
-    type Item = bool;
-
-    fn get(&self) -> Self::Item {
-        self.load(Ordering::Relaxed)
-    }
-
-    fn set(&self, value: Self::Item) {
-        self.store(value, Ordering::Relaxed)
     }
 }

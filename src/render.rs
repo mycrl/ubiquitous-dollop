@@ -1,11 +1,35 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::AtomicU32};
 
 use anyhow::Result;
 use pixels::{wgpu::TextureFormat, Pixels, PixelsBuilder, SurfaceTexture};
-use winit::window::Window;
+use winit::{
+    event::{Event, WindowEvent},
+    window::Window,
+};
+
+use crate::{CustomEvent, utils::EasyAtomic};
+
+#[derive(Clone, Copy)]
+pub struct TextureSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Copy)]
+pub struct TexturePosition {
+    pub x: u32,
+    pub y: u32,
+}
+
+#[derive(Default)]
+struct AtomicTextureSize {
+    width: AtomicU32,
+    height: AtomicU32,
+}
 
 pub struct Render {
     pixels: Mutex<Pixels>,
+    size: AtomicTextureSize,
 }
 
 impl Render {
@@ -21,6 +45,10 @@ impl Render {
 
         Ok(Arc::new(Self {
             pixels: Mutex::new(pixels),
+            size: AtomicTextureSize {
+                width: AtomicU32::new(size.width),
+                height: AtomicU32::new(size.height),
+            },
         }))
     }
 
@@ -29,16 +57,39 @@ impl Render {
         Ok(())
     }
 
-    pub fn input_webview_texture(&self, texture: &[u8], _width: u32, _height: u32) {
-        self.pixels
-            .lock()
-            .unwrap()
-            .frame_mut()
-            .copy_from_slice(texture);
+    pub fn input_texture(&self, texture: &[u8], size: TextureSize, position: TexturePosition) {
+        if position.x >= size.width || position.y >= size.height {
+            return;
+        }
+
+        let mut pixels = self.pixels.lock().unwrap();
+        if size.width != self.size.width.get() || size.height != self.size.height.get() {
+            if pixels.resize_buffer(size.width, size.height).is_err() {
+                return;
+            }
+
+            self.size.width.set(size.width);
+            self.size.height.set(size.height);
+        }
+
+        let frame = pixels.frame_mut();
+        frame.copy_from_slice(texture);
     }
 
     pub fn redraw(&self) -> Result<()> {
         self.pixels.lock().unwrap().render()?;
         Ok(())
+    }
+
+    pub fn input(&self, events: &Event<CustomEvent>) {
+        match events {
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::Resized(size) => {
+                    let _ = self.resize(size.width, size.height);
+                }
+                _ => (),
+            },
+            _ => (),
+        }
     }
 }
