@@ -1,4 +1,4 @@
-use crate::{render::Render, config::Config};
+use crate::{config::Config, render::Render};
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},

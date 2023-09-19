@@ -21,7 +21,7 @@ fn exec(cmd: &str, work_dir: &str) -> Result<ExitStatus, std::io::Error> {
 fn main() {
     let cef_version = "cef_binary_116.0.22+g480de66+chromium-116.0.5845.188";
     let librtc_version = "librtc-v0.1.x";
-    
+
     let is_debug = env::var("DEBUG")
         .map(|label| label == "true")
         .unwrap_or(true);
@@ -38,7 +38,7 @@ fn main() {
     if !is_exsit(&join(&out_dir, "./locales")) {
         exec(&format!("cp -r {}/* ./", &temp_cef), &out_dir).unwrap();
     }
-    
+
     if !is_exsit(&join(&out_dir, "./avcodec-59.dll")) {
         exec(&format!("cp -r {}/* ./", &temp_librtc), &out_dir).unwrap();
     }

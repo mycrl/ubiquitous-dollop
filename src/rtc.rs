@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use librtc::{RTCPeerConnection, Observer, RTCConfiguration};
+use librtc::{Observer, RTCConfiguration, RTCPeerConnection};
 
 struct RtcObserver;
 
 impl Observer for RtcObserver {
-    fn on_track(&self, track: librtc::MediaStreamTrack) {
-        
-    }
+    fn on_track(&self, track: librtc::MediaStreamTrack) {}
 }
 
 pub struct Rtc {
