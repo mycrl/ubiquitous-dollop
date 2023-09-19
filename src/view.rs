@@ -86,7 +86,7 @@ impl Webview {
         let browser = app
             .create_browser(
                 &BrowserSettings {
-                    device_scale_factor: window.scale_factor() as f32,
+                    device_scale_factor: 1.0,
                     is_offscreen: true,
                     height: size.height,
                     width: size.width,

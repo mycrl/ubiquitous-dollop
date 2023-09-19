@@ -19,3 +19,8 @@ pixels = "0.13.0"
 tokio = { version = "1.32.0", features = ["full"] }
 webview = { path = "./crates/webview" }
 winit = { git = "https://github.com/rust-windowing/winit", branch = "v0.29.x" }
+
+[profile.release]
+overflow-checks = false
+panic = "abort"
+debug = false

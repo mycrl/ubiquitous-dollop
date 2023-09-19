@@ -15,7 +15,7 @@ use tokio::runtime::Runtime;
 use view::Webview;
 use webview::{execute_subprocess, is_subprocess, Rect};
 use winit::{
-    dpi::{LogicalPosition, LogicalSize, PhysicalSize},
+    dpi::{LogicalPosition, LogicalSize},
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
     window::{Fullscreen, WindowBuilder},
@@ -39,15 +39,15 @@ fn main() -> anyhow::Result<()> {
     let event_loop = EventLoopBuilder::<CustomEvent>::with_user_event().build()?;
     let window = Arc::new(
         WindowBuilder::new()
-            .with_min_inner_size(PhysicalSize {
-                width: 800,
+            .with_min_inner_size(LogicalSize {
+                width: 1024,
                 height: 600,
             })
             .build(&event_loop)?,
     );
 
     window.set_ime_allowed(true);
-    window.set_resizable(true);
+    window.set_resizable(false);
 
     let render = Render::new(&window)?;
     let webview = runtime.block_on(async {
