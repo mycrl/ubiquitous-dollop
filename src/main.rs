@@ -4,6 +4,7 @@ mod render;
 mod rtc;
 mod utils;
 mod view;
+mod discovery;
 
 use std::sync::Arc;
 

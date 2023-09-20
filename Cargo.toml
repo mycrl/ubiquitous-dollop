@@ -8,7 +8,6 @@ resolver = "2"
 members = [
     "./crates/webview",
     "./crates/librtc",
-    "./crates/discovery"
 ]
 
 [dependencies]
