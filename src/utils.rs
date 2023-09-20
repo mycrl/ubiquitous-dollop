@@ -1,4 +1,4 @@
-use std::sync::atomic::{Ordering, AtomicBool, AtomicU32};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 pub trait EasyAtomic {
     type Item;

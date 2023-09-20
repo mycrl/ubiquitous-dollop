@@ -1,8 +1,9 @@
+mod bridge;
 mod config;
 mod render;
 mod rtc;
-mod view;
 mod utils;
+mod view;
 
 use std::sync::Arc;
 
@@ -60,9 +61,9 @@ fn main() -> anyhow::Result<()> {
         .await
     })?;
 
-    // let rtc = Rtc::new(&RTCConfiguration {
-    //     ..Default::default()
-    // })?;
+    let rtc = Rtc::new(&RTCConfiguration {
+        ..Default::default()
+    })?;
 
     let webview_ = webview.clone();
     let event_proxy = event_loop.create_proxy();

@@ -1,13 +1,11 @@
 use crate::{
     config::Config,
     render::{Render, TexturePosition, TextureSize},
-    CustomEvent, utils::EasyAtomic,
+    utils::EasyAtomic,
+    CustomEvent,
 };
 
-use std::sync::{
-    atomic::AtomicBool,
-    Arc, RwLock,
-};
+use std::sync::{atomic::AtomicBool, Arc, RwLock};
 
 use anyhow::Result;
 use webview::{

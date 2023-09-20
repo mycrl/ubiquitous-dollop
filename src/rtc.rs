@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use librtc::{Observer, RTCConfiguration, RTCPeerConnection};
+use librtc::{Observer, RTCConfiguration, RTCIceCandidate, RTCPeerConnection};
 
-struct RtcObserver;
+struct RtcObserver {}
 
 impl Observer for RtcObserver {
-    fn on_track(&self, _track: librtc::MediaStreamTrack) {}
+    fn on_ice_candidate(&self, candidate: RTCIceCandidate) {}
 }
 
 pub struct Rtc {
@@ -16,7 +16,7 @@ pub struct Rtc {
 impl Rtc {
     pub fn new(config: &RTCConfiguration) -> Result<Self> {
         Ok(Self {
-            conn: RTCPeerConnection::new(config, RtcObserver)?,
+            conn: RTCPeerConnection::new(config, RtcObserver {})?,
         })
     }
 }

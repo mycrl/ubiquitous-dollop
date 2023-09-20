@@ -7,15 +7,18 @@ edition = "2021"
 resolver = "2"
 members = [
     "./crates/webview",
-    "./crates/librtc"
+    "./crates/librtc",
+    "./crates/discovery"
 ]
 
 [dependencies]
 anyhow = "1.0.75"
+async-trait = "0.1.73"
 clap = { version = "4", features = ["derive", "env"] }
 dotenv = "0.15.0"
 librtc = { path = "./crates/librtc" }
 pixels = "0.13.0"
+serde = { version = "1.0.188", features = ["derive"] }
 tokio = { version = "1.32.0", features = ["full"] }
 webview = { path = "./crates/webview" }
 winit = { git = "https://github.com/rust-windowing/winit", branch = "v0.29.x" }

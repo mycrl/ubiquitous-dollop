@@ -3,11 +3,17 @@
         <div class="Code">
             <div class="Head">
                 <div class="Settings">
-                    
+                    <icon 
+                        class="icon hover" 
+                        :icon="['fas', 'gear']"
+                    />
                 </div>
             </div>
             <div class="Title">
-                <img/>
+                <icon 
+                    class="icon" 
+                    :icon="['fas', 'tower-broadcast']"
+                />
                 <h3>Connecting</h3>
                 <p>
                     Please share your code 
@@ -42,6 +48,8 @@
                 <div class="circle"/>
             </div>
             <div class="Nodes">
+                <div class="Node">
+                </div>
             </div>
             <div class="Help">
                 <span>Scanning for other users on LAN...</span>
@@ -58,8 +66,14 @@
 
     function onInput(value, index) {
         code.value[index] = value
-        if (index < code.value.length - 1) {
-            codesNode.value.querySelectorAll('input')[index + 1].focus()
+        if (value.length == 0) {
+            if (index > 0) {
+                codesNode.value.querySelectorAll('input')[index - 1].focus()
+            }
+        } else {
+            if (index < code.value.length - 1) {
+                codesNode.value.querySelectorAll('input')[index + 1].focus()
+            }
         }
     }
 </script>
@@ -84,16 +98,24 @@
     }
     
     .Code .Head .Settings {
-        
+        text-align: left;
     }
     
     .Code .Title {
-        margin-top: 25vh;
+        margin-top: 12vh;
+    }
+    
+    .Code .Title .icon {
+        border: 1px solid #ddd;
+        padding: 10px;
+        color: #999;
+        margin-bottom: 25px;
     }
     
     .Code .Title h3 {
         text-align: center;
         margin-bottom: 20px;
+        font-weight: bold;
     }
     
     .Code .Title p {

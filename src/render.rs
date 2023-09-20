@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, atomic::AtomicU32};
+use std::sync::{atomic::AtomicU32, Arc, Mutex};
 
 use anyhow::Result;
 use pixels::{wgpu::TextureFormat, Pixels, PixelsBuilder, SurfaceTexture};
@@ -7,7 +7,7 @@ use winit::{
     window::Window,
 };
 
-use crate::{CustomEvent, utils::EasyAtomic};
+use crate::{utils::EasyAtomic, CustomEvent};
 
 #[derive(Clone, Copy)]
 pub struct TextureSize {

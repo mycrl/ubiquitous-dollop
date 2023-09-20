@@ -1,7 +1,6 @@
 * {
     margin: 0;
     padding: 0;
-    font-family: FMBook, FMMedium, Microsoft YaHei, sans-serif;
 }
 
 body {
@@ -44,4 +43,10 @@ button, .hover {
     border-radius: 7px;
     border: 1px solid #ddd;
     padding: 15px;
+}
+
+.icon {
+    border: 1px solid #eee;
+    padding: 7px;
+    border-radius: 5px;
 }
