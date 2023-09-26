@@ -3,3 +3,4 @@ DawnCache
 GPUCache
 .env
 .vscode
+Cargo.lock
