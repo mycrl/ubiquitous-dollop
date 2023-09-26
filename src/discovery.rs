@@ -3,9 +3,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use anyhow::Result;
 use tokio::net::UdpSocket;
 
-pub struct BroadcastMessage {
-
-}
+pub struct BroadcastMessage {}
 
 pub struct Discovery {
     socket: UdpSocket,

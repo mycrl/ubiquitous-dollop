@@ -27,8 +27,9 @@ pub struct Bridger {}
 impl BridgeObserver for Bridger {
     type Req = Request;
     type Res = Option<Response>;
+    type Err = anyhow::Error;
 
-    async fn on(&self, req: Self::Req) -> Result<Self::Res> {
+    async fn on(&self, req: Self::Req) -> Result<Self::Res, Self::Err> {
         Ok(None)
     }
 }

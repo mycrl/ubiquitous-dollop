@@ -1,10 +1,10 @@
 mod bridge;
 mod config;
+mod discovery;
 mod render;
 mod rtc;
 mod utils;
 mod view;
-mod discovery;
 
 use std::sync::Arc;
 
