@@ -1,6 +1,5 @@
 mod bridge;
 mod config;
-mod discovery;
 mod render;
 mod rtc;
 mod utils;
