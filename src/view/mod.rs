@@ -1,8 +1,10 @@
+mod bridge;
+
 use crate::{
     config::Config,
     render::{Render, TexturePosition, TextureSize},
     utils::EasyAtomic,
-    CustomEvent,
+    CustomEvent, signaling::Signaling, rtc::Rtc,
 };
 
 use std::sync::{atomic::AtomicBool, Arc, RwLock};
@@ -23,6 +25,8 @@ use winit::{
         Window,
     },
 };
+
+pub use self::bridge::Bridger;
 
 struct WebviewObserver {
     render: Arc<Render>,
@@ -66,6 +70,8 @@ impl Webview {
         render: Arc<Render>,
         window: Arc<Window>,
         event_proxy: EventLoopProxy<CustomEvent>,
+        signaling: Arc<Signaling>,
+        rtc: Arc<Rtc>,
     ) -> Result<Arc<Self>> {
         let app = App::new(&AppSettings {
             cache_path: None,
@@ -98,6 +104,11 @@ impl Webview {
                 },
             )
             .await?;
+
+        browser.on_bridge(Bridger {
+            signaling,
+            rtc,
+        });
 
         if config.devtools {
             browser.set_devtools_state(true);

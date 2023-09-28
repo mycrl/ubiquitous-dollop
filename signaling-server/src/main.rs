@@ -1,19 +1,29 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use anyhow::{anyhow, Result};
-use futures_util::stream::StreamExt;
-use tokio::{net::TcpListener, sync::mpsc::UnboundedSender};
+use futures_util::{SinkExt, StreamExt};
+use serde::Deserialize;
+use tokio::{
+    net::TcpListener,
+    sync::mpsc::{unbounded_channel, UnboundedSender},
+};
+
 use tokio_tungstenite::{
-    accept_async,
+    accept_hdr_async,
     tungstenite::{
         handshake::server::{Callback, ErrorResponse, Request, Response},
         http::{response, StatusCode},
         Message,
     },
 };
+
+#[derive(Debug, Deserialize)]
+struct Payload {
+    to: String,
+}
 
 struct AuthParams<'a> {
     id: &'a str,
@@ -43,22 +53,24 @@ impl<'a> TryFrom<&'a str> for AuthParams<'a> {
 struct Guarder {
     router: Arc<Router>,
     sender: UnboundedSender<String>,
+    id: Arc<Mutex<Option<String>>>,
     secret: String,
 }
 
 impl Callback for Guarder {
     fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
-        let ret = (|| {
+        let handle = || {
             let auth = AuthParams::try_from(request.uri().query().unwrap_or(""))?;
             if auth.secret != self.secret {
                 return Err(anyhow!("auth failed!"));
             }
 
+            let _ = self.id.lock().unwrap().insert(auth.id.to_string());
             self.router.register(auth.id.to_string(), self.sender);
             Ok::<(), anyhow::Error>(())
-        })();
+        };
 
-        match ret {
+        match handle() {
             Ok(_) => Ok(response),
             Err(e) => Err(response::Builder::new()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -76,6 +88,10 @@ impl Router {
         self.0.write().unwrap().insert(id, sender);
     }
 
+    fn unregister(&self, id: &str) {
+        self.0.write().unwrap().remove(id);
+    }
+
     fn send(&self, id: &str, payload: String) -> Result<()> {
         if let Some(sender) = self.0.read().unwrap().get(id) {
             sender.send(payload)?;
@@ -90,24 +106,50 @@ async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
     let router = Arc::new(Router::default());
 
-    while let Ok((socket, addr)) = listener.accept().await {
+    while let Ok((socket, _)) = listener.accept().await {
+        let router = router.clone();
+
         tokio::spawn(async move {
-            if let Ok(mut stream) = accept_async(socket).await {
+            let (sender, mut receiver) = unbounded_channel();
+            let id = Arc::new(Mutex::new(None));
+
+            if let Ok(mut stream) = accept_hdr_async(
+                socket,
+                Guarder {
+                    secret: "test".to_string(),
+                    router: router.clone(),
+                    id: id.clone(),
+                    sender,
+                },
+            )
+            .await
+            {
                 loop {
                     tokio::select! {
                         Some(ret) = stream.next() => {
-                            let msg = match ret {
-                                Ok(ret) => ret,
-                                Err(_) => {
-                                    break;
+                            if let Ok(msg) = ret {
+                                if let Message::Text(payload) = msg {
+                                    if let Ok(json) = serde_json::from_str::<Payload>(&payload) {
+                                        if router.send(&json.to, payload).is_err() {
+                                            break;
+                                        }
+                                    }
                                 }
-                            };
-
-                            if let Message::Text(payload) = msg {
-
+                            } else {
+                                break;
                             }
                         }
+                        Some(msg) = receiver.recv() => {
+                            if stream.send(Message::Text(msg)).await.is_err() {
+                                break;
+                            }
+                        }
+                        else => ()
                     }
+                }
+
+                if let Some(id) = id.lock().unwrap().as_ref() {
+                    router.unregister(id);
                 }
             }
         });

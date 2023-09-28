@@ -1,9 +1,10 @@
-mod bridge;
 mod config;
 mod render;
 mod rtc;
+mod signaling;
 mod utils;
 mod view;
+mod settings;
 
 use std::sync::Arc;
 
@@ -12,6 +13,7 @@ use dotenv::dotenv;
 use librtc::RTCConfiguration;
 use render::Render;
 use rtc::Rtc;
+use signaling::Signaling;
 use tokio::runtime::Runtime;
 use view::Webview;
 use webview::{execute_subprocess, is_subprocess, Rect};
@@ -51,18 +53,24 @@ fn main() -> anyhow::Result<()> {
     window.set_resizable(false);
 
     let render = Render::new(&window)?;
+    let signaling = Arc::new(Signaling::default());
+    let rtc = Rtc::new(
+        &RTCConfiguration {
+            ..Default::default()
+        },
+        signaling.clone(),
+    )?;
+
     let webview = runtime.block_on(async {
         Webview::new(
             config.clone(),
             render.clone(),
             window.clone(),
             event_loop.create_proxy(),
+            signaling, 
+            rtc,
         )
         .await
-    })?;
-
-    let rtc = Rtc::new(&RTCConfiguration {
-        ..Default::default()
     })?;
 
     let webview_ = webview.clone();
