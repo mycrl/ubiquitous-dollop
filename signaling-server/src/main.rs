@@ -52,7 +52,7 @@ impl<'a> TryFrom<&'a str> for AuthParams<'a> {
 
 struct Guarder {
     router: Arc<Router>,
-    sender: UnboundedSender<String>,
+    sender: UnboundedSender<Signal>,
     id: Arc<Mutex<Option<String>>>,
     secret: String,
 }
@@ -80,12 +80,19 @@ impl Callback for Guarder {
     }
 }
 
+enum Signal {
+    Message(String),
+    Closed,
+}
+
 #[derive(Default)]
-struct Router(RwLock<HashMap<String, UnboundedSender<String>>>);
+struct Router(RwLock<HashMap<String, UnboundedSender<Signal>>>);
 
 impl Router {
-    fn register(&self, id: String, sender: UnboundedSender<String>) {
-        self.0.write().unwrap().insert(id, sender);
+    fn register(&self, id: String, sender: UnboundedSender<Signal>) {
+        if let Some(sender) = self.0.write().unwrap().insert(id, sender) {
+            let _ = sender.send(Signal::Closed);
+        }
     }
 
     fn unregister(&self, id: &str) {
@@ -94,7 +101,7 @@ impl Router {
 
     fn send(&self, id: &str, payload: String) -> Result<()> {
         if let Some(sender) = self.0.read().unwrap().get(id) {
-            sender.send(payload)?;
+            sender.send(Signal::Message(payload))?;
         }
 
         Ok(())
@@ -103,12 +110,16 @@ impl Router {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    simple_logger::init()?;
+
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    log::info!("signaling server listening: addr={}", "127.0.0.1:8080");
+
     let router = Arc::new(Router::default());
+    while let Ok((socket, addr)) = listener.accept().await {
+        log::info!("tcp socket accept: addr={:?}", addr);
 
-    while let Ok((socket, _)) = listener.accept().await {
         let router = router.clone();
-
         tokio::spawn(async move {
             let (sender, mut receiver) = unbounded_channel();
             let id = Arc::new(Mutex::new(None));
@@ -124,6 +135,12 @@ async fn main() -> anyhow::Result<()> {
             )
             .await
             {
+                let id = match id.lock().unwrap().as_ref() {
+                    Some(id) => id.clone(),
+                    None => return,
+                };
+
+                log::info!("websocket accept: addr={:?}, id={}", addr, id);
                 loop {
                     tokio::select! {
                         Some(ret) = stream.next() => {
@@ -139,18 +156,24 @@ async fn main() -> anyhow::Result<()> {
                                 break;
                             }
                         }
-                        Some(msg) = receiver.recv() => {
-                            if stream.send(Message::Text(msg)).await.is_err() {
-                                break;
+                        Some(signal) = receiver.recv() => {
+                            match signal {
+                                Signal::Message(msg) => {
+                                    if stream.send(Message::Text(msg)).await.is_err() {
+                                        break;
+                                    }
+                                }
+                                Signal::Closed => {
+                                    break;
+                                }
                             }
                         }
                         else => ()
                     }
                 }
 
-                if let Some(id) = id.lock().unwrap().as_ref() {
-                    router.unregister(id);
-                }
+                log::info!("websocket disconnect: addr={:?}, id={}", addr, id);
+                router.unregister(&id);
             }
         });
     }

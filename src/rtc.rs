@@ -6,21 +6,25 @@ use librtc::{
     Observer, RTCConfiguration, RTCIceCandidate, RTCPeerConnection, RTCSessionDescription,
 };
 
+use tokio::sync::RwLock;
+
 use crate::signaling::{Signaler, Signaling};
 
 pub struct SignalingObserver {
-    conn: Arc<RTCPeerConnection>,
-    signaling: Arc<Signaling>,
+    pub maybe_uinit_rtc: MaybeUninitRtc,
+    pub signaling: Arc<Signaling>,
 }
 
 #[async_trait]
 impl Signaler for SignalingObserver {
     async fn on_offer(&self, id: String, offer: RTCSessionDescription) {
         let handle = || async {
-            self.conn.set_remote_description(&offer).await?;
-            let answer = self.conn.create_answer().await?;
-            self.conn.set_local_description(&answer).await?;
-            self.signaling.send_answer(id, answer)?;
+            if let Some(rtc) = self.maybe_uinit_rtc.read().await.as_ref() {
+                rtc.peerconnection.set_remote_description(&offer).await?;
+                let answer = rtc.peerconnection.create_answer().await?;
+                rtc.peerconnection.set_local_description(&answer).await?;
+                self.signaling.send_answer(id, answer)?;
+            }
 
             Ok::<(), anyhow::Error>(())
         };
@@ -31,14 +35,18 @@ impl Signaler for SignalingObserver {
     }
 
     async fn on_answer(&self, _: String, answer: RTCSessionDescription) {
-        if let Err(e) = self.conn.set_remote_description(&answer).await {
-            log::error!("failed to set remote answer!, error={:?}", e);
+        if let Some(rtc) = self.maybe_uinit_rtc.read().await.as_ref() {
+            if let Err(e) = rtc.peerconnection.set_remote_description(&answer).await {
+                log::error!("failed to set remote answer!, error={:?}", e);
+            }
         }
     }
 
     async fn on_ice_candidate(&self, _: String, candidate: RTCIceCandidate) {
-        if let Err(e) = self.conn.add_ice_candidate(&candidate) {
-            log::error!("failed to add remote candidate!, error={:?}", e);
+        if let Some(rtc) = self.maybe_uinit_rtc.read().await.as_ref() {
+            if let Err(e) = rtc.peerconnection.add_ice_candidate(&candidate) {
+                log::error!("failed to add remote candidate!, error={:?}", e);
+            }
         }
     }
 }
@@ -57,8 +65,10 @@ impl Observer for RtcObserver {
     }
 }
 
+pub type MaybeUninitRtc = Arc<RwLock<Option<Arc<Rtc>>>>;
+
 pub struct Rtc {
-    conn: Arc<RTCPeerConnection>,
+    peerconnection: Arc<RTCPeerConnection>,
     signaling: Arc<Signaling>,
 }
 
@@ -66,20 +76,13 @@ impl Rtc {
     pub fn new(config: &RTCConfiguration, signaling: Arc<Signaling>) -> Result<Arc<Self>> {
         Ok(Arc::new(Self {
             signaling: signaling.clone(),
-            conn: RTCPeerConnection::new(config, RtcObserver { signaling })?,
+            peerconnection: RTCPeerConnection::new(config, RtcObserver { signaling })?,
         }))
     }
 
-    pub fn get_signaler(&self) -> SignalingObserver {
-        SignalingObserver {
-            conn: self.conn.clone(),
-            signaling: self.signaling.clone(),
-        }
-    }
-
     pub async fn offer(&self, id: String) -> Result<()> {
-        let offer = self.conn.create_offer().await?;
-        self.conn.set_local_description(&offer).await?;
+        let offer = self.peerconnection.create_offer().await?;
+        self.peerconnection.set_local_description(&offer).await?;
         self.signaling.send_offer(id, offer)?;
 
         Ok(())

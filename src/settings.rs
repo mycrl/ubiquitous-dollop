@@ -1,46 +1,51 @@
-use std::sync::RwLock;
+use std::sync::{RwLock, RwLockReadGuard};
 
-use once_cell::sync::Lazy;
+use macros::Partial;
 use serde::{Deserialize, Serialize};
 
-pub static GLOBAL_SETTINGS: Lazy<RwLock<Settings>> = Lazy::new(|| {
-    RwLock::new(Settings::default())
-});
-
-pub struct SettingsManager;
-
-impl SettingsManager {
-    #[inline]
-    pub fn get_ref() -> Settings {
-        GLOBAL_SETTINGS.read().unwrap().clone()
-    }
-}
-
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[derive(Partial, Debug, Default, Clone, Deserialize, Serialize)]
+#[partial(
+    alias = "PartialSignalingSettings", 
+    derives = [Debug + Default + Clone + Deserialize + Serialize]
+)]
 pub struct SignalingSettings {
-    #[serde(default = "SignalingSettings::server")]
     pub server: String,
-    #[serde(default = "SignalingSettings::id")]
     pub id: String,
-    #[serde(default = "SignalingSettings::secret")]
     pub secret: String,
 }
 
-impl SignalingSettings {
-    fn server() -> String {
-        SettingsManager::get_ref().signaling.server.clone()
-    }
-
-    fn id() -> String {
-        SettingsManager::get_ref().signaling.id.clone()
-    }
-    
-    fn secret() -> String {
-        SettingsManager::get_ref().signaling.secret.clone()
-    }
+#[derive(Partial, Debug, Default, Clone, Deserialize, Serialize)]
+#[partial(
+    alias = "PartialRtcSettings", 
+    derives = [Debug + Default + Clone + Deserialize + Serialize]
+)]
+pub struct RtcSettings {
+    pub credential: Option<String>,
+    pub username: Option<String>,
+    pub urls: Option<Vec<String>>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[derive(Partial, Debug, Default, Clone, Deserialize, Serialize)]
+#[partial(
+    alias = "PartialSettings", 
+    derives = [Debug + Default + Clone + Deserialize + Serialize]
+)]
 pub struct Settings {
+    #[partial(from = "PartialSignalingSettings")]
     pub signaling: SignalingSettings,
+    #[partial(from = "PartialRtcSettings")]
+    pub rtc: RtcSettings,
+}
+
+#[derive(Default)]
+pub struct SettingsManager(RwLock<Settings>);
+
+impl SettingsManager {
+    pub fn get(&self) -> RwLockReadGuard<Settings> {
+        self.0.read().unwrap()
+    }
+
+    pub fn set(&self, settings: PartialSettings) {
+        self.0.write().unwrap().from_partial(settings)
+    }
 }

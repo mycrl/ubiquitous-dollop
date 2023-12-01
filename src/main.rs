@@ -1,18 +1,18 @@
 mod config;
 mod render;
 mod rtc;
+mod settings;
 mod signaling;
 mod utils;
 mod view;
-mod settings;
 
 use std::sync::Arc;
 
 use config::Config;
 use dotenv::dotenv;
-use librtc::RTCConfiguration;
 use render::Render;
-use rtc::Rtc;
+use rtc::MaybeUninitRtc;
+use settings::SettingsManager;
 use signaling::Signaling;
 use tokio::runtime::Runtime;
 use view::Webview;
@@ -39,7 +39,9 @@ fn main() -> anyhow::Result<()> {
 
     let config = Config::new();
     let runtime = Runtime::new()?;
+    let settings = Arc::new(SettingsManager::default());
     let event_loop = EventLoopBuilder::<CustomEvent>::with_user_event().build()?;
+
     let window = Arc::new(
         WindowBuilder::new()
             .with_min_inner_size(LogicalSize {
@@ -53,13 +55,8 @@ fn main() -> anyhow::Result<()> {
     window.set_resizable(false);
 
     let render = Render::new(&window)?;
-    let signaling = Arc::new(Signaling::default());
-    let rtc = Rtc::new(
-        &RTCConfiguration {
-            ..Default::default()
-        },
-        signaling.clone(),
-    )?;
+    let signaling = Arc::new(Signaling::new(settings.clone()));
+    let maybe_uinit_rtc = MaybeUninitRtc::default();
 
     let webview = runtime.block_on(async {
         Webview::new(
@@ -67,8 +64,9 @@ fn main() -> anyhow::Result<()> {
             render.clone(),
             window.clone(),
             event_loop.create_proxy(),
-            signaling, 
-            rtc,
+            signaling,
+            maybe_uinit_rtc,
+            settings.clone(),
         )
         .await
     })?;

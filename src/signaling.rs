@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-use crate::settings::SignalingSettings;
+use crate::settings::SettingsManager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum Signal {
@@ -32,23 +32,34 @@ pub trait Signaler: Send + Sync {
     async fn on_ice_candidate(&self, id: String, candidate: RTCIceCandidate) {}
 }
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct Signaling {
     sender: Arc<RwLock<Option<UnboundedSender<(String, Signal)>>>>,
     last_to: Arc<Mutex<Option<String>>>,
+    settings: Arc<SettingsManager>,
 }
 
 impl Signaling {
-    pub async fn connect<T>(&self, settings: SignalingSettings, signaler: T) -> Result<()>
+    pub fn new(settings: Arc<SettingsManager>) -> Self {
+        Self {
+            settings,
+            sender: Default::default(),
+            last_to: Default::default(),
+        }
+    }
+
+    pub async fn connect<T>(&self, signaler: T) -> Result<()>
     where
         T: Signaler + 'static,
     {
+        let settings = self.settings.get().signaling.clone();
         let (mut stream, _) = connect_async(format!(
             "{server}?id={id}&secret={secret}",
             server = settings.server,
             id = settings.id,
             secret = settings.secret
-        )).await?;
+        ))
+        .await?;
 
         let sender = self.sender.clone();
         let last_to = self.last_to.clone();
